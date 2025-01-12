@@ -1,0 +1,9 @@
+[requires]
+    openssl/1.0.2t
+
+[options]
+#openssl:enable_capieng=True
+
+[imports]
+    lib, pdb, *.dylib* -> ./bin # Copies all dylib files from packages lib folder to my "bin" folder
+    # Note: No pdbs on conan?

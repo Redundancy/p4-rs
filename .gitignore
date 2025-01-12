@@ -1,0 +1,7 @@
+/target
+/openssl
+/p4api*
+/zlib
+
+/perforce-server
+/temp
