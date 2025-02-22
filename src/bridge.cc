@@ -16,15 +16,19 @@ rust::String P4ClientApi::get_version() {
 }
 
 std::unique_ptr<P4Error> P4ClientApi::init() {
-    StrBuf sb;
-    sb.Set( "P4RustTest" );
     auto e = std::make_unique<P4Error>();
-
-    this->api.SetPort("localhost:1666");
-
-    this->api.SetProg(&sb);
     this->api.Init(&e->error);
     return e;
+}
+
+void P4ClientApi::set_program(rust::Str program) {
+    std::string prog(program);
+    this->api.SetProg(prog.c_str());
+}
+
+void P4ClientApi::set_port(rust::Str port) {
+    std::string p(port);
+    this->api.SetPort(p.c_str());
 }
 
 std::unique_ptr<P4Error> P4ClientApi::finalizer() {
@@ -33,9 +37,29 @@ std::unique_ptr<P4Error> P4ClientApi::finalizer() {
     return e;
 }
 
-std::unique_ptr<P4Error> P4ClientApi::run(rust::Str command) {
+void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
+    char** c_arg = new char*[args.size()];
+
+    for (size_t i = 0; i < args.size(); ++i) {
+        auto s = args[i].size() + 1;
+        c_arg[i] = new char[s];
+        strcpy_s(c_arg[i], s, args[i].c_str());
+    }
+
+    // char *const *
+    this->api.SetArgv(args.size(), c_arg);
+
+    for (size_t i = 0; i < args.size(); ++i) {
+        delete[] c_arg[i];
+    }
+    delete[] c_arg;
+}
+
+std::unique_ptr<P4Error> P4ClientApi::run(P4ClientUser& ui, rust::Str command) {
     auto e = std::make_unique<P4Error>();
-    this->api.Run(command.data(), (ClientUser*)&this->user);
+    std::string command_str(command);
+    this->api.Run(command_str.c_str(), (ClientUser*)&ui);
+    // TODO: How to get an error from the command?
     return e;
 }
 
@@ -64,17 +88,28 @@ rust::Vec<ErrID> P4Error::errors() const {
 rust::String P4Error::get(rust::Str s) {
     StrBuf sb;
     sb.Set( s.data(), s.length());
+
     auto dict = this->error.GetDict();
+    if (dict == 0) {
+        return std::string();
+    }
+
     auto var = dict->GetVar(sb);
+    if (var == 0) {
+        return std::string();
+    }
+
     return std::string(var->Text(), var->Length());
 }
 
 P4Error::P4Error() {}
 
-P4ClientUser::P4ClientUser() {}
+P4ClientUser::P4ClientUser(UICallbackImplementation* cb) {
+    this->impl = cb;
+}
 
-std::unique_ptr<P4ClientUser> new_client_user() {
-    return std::make_unique<P4ClientUser>();
+std::unique_ptr<P4ClientUser> new_client_user(UICallbackImplementation* callback) {
+    return std::make_unique<P4ClientUser>(callback);
 }
 
 // https://www.perforce.com/manuals/p4api/Content/P4API/clientuser.message.html
@@ -82,12 +117,12 @@ void P4ClientUser::Message( Error* err ) {
     if (err == 0) {
         return;
     }
-
-    if (err->IsInfo()) {
-        StrBuf buf;
-        err->Fmt( buf, EF_PLAIN );
-        // TODO: Needs to go back to Rust layer
-        auto& s = std::string(buf.Text(), buf.Length());
-        std::cout << s << "\n";
+    if (this->impl == nullptr) {
+        return;
     }
+
+    StrBuf buf;
+    err->Fmt( buf, EF_PLAIN );
+    auto s = std::string(buf.Text(), buf.Length());
+    this->impl->message(rust::Str(s));
 }

@@ -1,15 +1,10 @@
-use std::{env, io};
-use std::fs::File;
-use std::io::{Error, Write};
+use std::{env};
 use std::path::{Path};
 
 // OpenSSL 1.0.2t
 fn main() {
     let out_dir = env::var_os("OUT_DIR").expect("OUT_DIR env variable not set").to_owned();
     let _target_dir = Path::new(out_dir.as_os_str()).ancestors().nth(4).unwrap();
-
-    #[cfg(feature = "disable-dropbox")]
-    set_directory_as_dropbox_ignored(_target_dir).expect("should work!");
 
     println!("cargo:rustc-link-lib=Msvcrt");
 
@@ -49,29 +44,4 @@ fn main() {
         .static_flag(true)
         .flag_if_supported("-std=c++14")
         .compile("p4api-bridge");
-}
-
-#[derive(Debug)]
-enum SetIgnoredError {
-    IoError(io::Error),
-    NoFileNameError,
-}
-
-fn set_directory_as_dropbox_ignored(path : &Path) -> Result<(), SetIgnoredError> {
-    let mut s = path.to_path_buf();
-    let current_filename = path.file_name().ok_or(SetIgnoredError::NoFileNameError)?;
-
-    let mut f = current_filename.to_os_string();
-    f.push(":com.dropbox.ignored");
-
-    s.set_file_name(f);
-
-    let mut file = File::create(s.as_path())?;
-    write!(file, "{}", "1").map_err(|e| SetIgnoredError::from(e))
-}
-
-impl From<io::Error> for SetIgnoredError {
-    fn from(e: Error) -> Self {
-        SetIgnoredError::IoError(e)
-    }
 }

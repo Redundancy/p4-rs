@@ -1,0 +1,1 @@
+p4d -In "test" -r "C:/temp/p4" -p "localhost:1666"
