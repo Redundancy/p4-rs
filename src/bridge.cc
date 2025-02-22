@@ -3,6 +3,11 @@
 #include <memory>
 #include <iostream>
 
+
+std::unique_ptr<P4Error> placeholder_error() {
+    return std::make_unique<P4Error>();
+}
+
 // https://www.perforce.com/manuals/p4api/Content/P4API/clientapi.html
 P4ClientApi::P4ClientApi() {}
 

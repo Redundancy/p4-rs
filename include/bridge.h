@@ -20,6 +20,8 @@ public:
     rust::String get(rust::Str s);
 };
 
+std::unique_ptr<P4Error> placeholder_error();
+
 class P4ClientUser;
 
 /// P4ClientApi is an wrapper of the ClientApi in C++ to create a

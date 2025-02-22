@@ -36,7 +36,7 @@ fn main() {
     println!("cargo:rerun-if-changed=src/bridge.cc");
     println!("cargo:rerun-if-changed=src/main.rs");
 
-    cxx_build::bridge("src/main.rs")  // returns a cc::Build
+    cxx_build::bridges(vec!["src/client.rs", "src/errors.rs"])  // returns a cc::Build
         .include("p4/openssl/include")
         .include("p4/zlib/include")// needed?
         .static_crt(true)
