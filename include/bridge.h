@@ -45,22 +45,21 @@ private:
 
 std::unique_ptr<P4ClientApi> new_client_api();
 
-struct UICallbackImplementation;
+struct UICallbackProxy;
 
 /// P4ClientUser is an implementation of ClientUser in C++ to create a
 /// Rust compatible (but not ergonomic) class
 class P4ClientUser : public ClientUser {
 public:
-    P4ClientUser(UICallbackImplementation* callback);
+    P4ClientUser(UICallbackProxy* callback);
 
     // C++ Callback functions from p4api::ClientUser
     virtual void Message( Error *err );
 
     // Rust callback functions used
     // We're using a raw pointer because we never give this ownership
-    UICallbackImplementation* impl;
+    UICallbackProxy* impl;
 };
 
-std::unique_ptr<P4ClientUser> new_client_user( UICallbackImplementation* callback ) ;
+std::unique_ptr<P4ClientUser> new_client_user(UICallbackProxy* callback) ;
 
-//std::unique_ptr<P4Error> new_error();

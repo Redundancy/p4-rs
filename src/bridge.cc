@@ -1,5 +1,5 @@
 #include "p4/include/bridge.h"
-#include "p4/src/main.rs.h"
+#include "p4/src/client.rs.h"
 #include <memory>
 #include <iostream>
 
@@ -51,8 +51,7 @@ void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
         strcpy_s(c_arg[i], s, args[i].c_str());
     }
 
-    // char *const *
-    this->api.SetArgv(args.size(), c_arg);
+    this->api.SetArgv(args.size(), /* char *const * */ c_arg);
 
     for (size_t i = 0; i < args.size(); ++i) {
         delete[] c_arg[i];
@@ -60,11 +59,11 @@ void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
     delete[] c_arg;
 }
 
+// TODO: void return, get errors from callbacks
 std::unique_ptr<P4Error> P4ClientApi::run(P4ClientUser& ui, rust::Str command) {
     auto e = std::make_unique<P4Error>();
     std::string command_str(command);
     this->api.Run(command_str.c_str(), (ClientUser*)&ui);
-    // TODO: How to get an error from the command?
     return e;
 }
 
@@ -109,11 +108,11 @@ rust::String P4Error::get(rust::Str s) {
 
 P4Error::P4Error() {}
 
-P4ClientUser::P4ClientUser(UICallbackImplementation* cb) {
+P4ClientUser::P4ClientUser(UICallbackProxy* cb) {
     this->impl = cb;
 }
 
-std::unique_ptr<P4ClientUser> new_client_user(UICallbackImplementation* callback) {
+std::unique_ptr<P4ClientUser> new_client_user(UICallbackProxy* callback) {
     return std::make_unique<P4ClientUser>(callback);
 }
 

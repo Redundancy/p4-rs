@@ -1,5 +1,7 @@
+
 mod errors;
 mod client;
+pub mod commands;
 
 /// Perforce Rust API Wrapper
 ///
@@ -24,39 +26,14 @@ mod client;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("p4-rs Creating and connecting");
 
-    let c = client::Options::new()
+    let mut c = client::Options::new()
         .set_program("foo.rs")
         .set_port("localhost:1666")
-        .connect();
+        .connect()?;
 
-    // TODO: Make standard error from p4 ergonomic
-    // TODO: P4InternalError should just be called Error
-    if let Err(err) = c {
-        let mut err = err;
-        if let Some(mut ie) = err.internal_error.as_mut() {
-            println!("operation: {}", ie.as_mut().get("operation"));
-            println!("host: {}", ie.as_mut().get("host"));
-        } else {
-            println!("connect error");
-        }
-        return Err(Box::new(err));
-    }
-    let mut c = c.unwrap();
-    let mut ui = client::UserInterface::new();
-
-    // TODO: keep "run" for the generic case, but expose c.info() -> Result<Info, P4InternalError>
-    let v = c.run(&mut ui, "info", Vec::<String>::new())?;
-    println!("Result: {}", v);
+    let r = c.info(&commands::info::Options::new())?;
+    println!("Result: {:?}", r);
+    println!("User name: {}", r.user_name);
     
-    // TODO: aim for a 
-    // let info = Info::new().shortened().run(&mut c)?;
-    // let sync = Sync::new()
-    //                  .force()
-    //                  .metadata_only()
-    //                  .with_global_args(...)
-    //                  .run(&mut c)?;
-
-    let v = c.run(&mut ui, "clients", vec![])?;
-    println!("Result: {}", v);
     Ok(())
 }

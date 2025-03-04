@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
 use miette::Diagnostic;
@@ -9,6 +10,9 @@ use thiserror::Error;
 pub enum Error {
     #[error("Oops it blew up")]
     RawError(#[from] P4InternalError),
+    
+    #[error("Oops it blew up")]
+    SerializationError(serde::de::value::Error, HashMap<String, String>),
 }
 
 /// This is a user-facing error type for low level usage

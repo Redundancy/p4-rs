@@ -1,5 +1,9 @@
+use std::any::Any;
+use std::collections::HashMap;
 use cxx::UniquePtr;
-use log::info;
+use log::{info, warn};
+use serde::Deserialize;
+use crate::commands;
 use crate::errors::{Error, P4InternalError};
 
 pub struct Options {
@@ -24,19 +28,19 @@ impl Client {
 /// it should be a usable, idiomatic rust type
 pub struct UserInterface {
     internal: cxx::UniquePtr<ffi::P4ClientUser>,
-    callback: Box<UICallbackImplementation>,
+    callback: Box<UICallbackProxy>,
 }
 
 impl UserInterface {
     ///  We create a UserInterface and immediately create a ClientUser, which is a C++ object.
     ///  The ClientUser needs a rust object on which to call callbacks,
-    ///  and this is the purpose of the UICallbackImplementation.
+    ///  and this is the purpose of the UICallbackProxy.
     ///
     /// Safety: the callback object is owned by the UserInterface. The callback is only
     /// called in the context of the P4ClientUser, which is also owned by the user interface.
     pub fn new() -> UserInterface {
-        let mut x = Box::new(UICallbackImplementation { value: None });
-        let cb: *mut UICallbackImplementation = &mut *x;
+        let mut x = Box::new(UICallbackProxy::new(None));
+        let cb: *mut UICallbackProxy = &mut *x;
         UserInterface {
             internal: unsafe { ffi::new_client_user(cb) },
             callback: x,
@@ -91,6 +95,33 @@ impl Options {
     }
 }
 
+struct JsonValueCollector {
+    value: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl CallbackHandler for JsonValueCollector {
+    fn message(&mut self, message: &str) {
+        let mut o = self.value.take().unwrap_or_else(|| serde_json::Map::new());
+        if let Some((a, b)) = message.split_once(':') {
+            o.insert(a.to_string(), serde_json::Value::String(b.trim_start().to_string()));
+        }
+        self.value = Some(o);
+    }
+}
+
+struct MapValueCollector {
+    value: HashMap<String, String>
+}
+
+impl CallbackHandler for MapValueCollector {
+    fn message(&mut self, message: &str) {
+        if let Some((a, b)) = message.split_once(':') {
+            self.value.insert(a.to_string(), b.trim_start().to_string());
+        }
+    }
+}
+
+
 impl Client {
     pub fn run(
         &mut self,
@@ -98,13 +129,43 @@ impl Client {
         command: &str,
         args: Vec<String>,
     ) -> Result<serde_json::Value, Error> {
-        println!("Running \"{}\"", command);
-
         let mut api = self.internal_client.as_mut().unwrap();
+        ui.callback.value = Some(Box::new(JsonValueCollector{ value: None }));
+        
         api.as_mut().set_argv(args);
         api.as_mut().run(ui.internal.pin_mut(), command);
-
-        Ok(ui.callback.value.take().unwrap().into())
+        
+        assert!(rustversion::cfg!(before(1.86)), "use std::any::Any with trait_upcasting");
+        let mut m: Box<JsonValueCollector> = {
+            let result  = Box::into_raw(ui.callback.value.take().unwrap());
+            unsafe{ Box::from_raw( result.cast()) }
+        };
+        
+        Ok(m.value.take().unwrap().into())
+    }
+    
+    fn run_map_output(&mut self, ui: &mut UserInterface, command: &str, args: Vec<String>) -> Result<HashMap<String, String>, Error> {
+        let mut api = self.internal_client.as_mut().unwrap();
+        ui.callback.value = Some(Box::new(MapValueCollector{ value: HashMap::new() }));
+        
+        api.as_mut().set_argv(args);
+        api.as_mut().run(ui.internal.pin_mut(), command);
+        
+        assert!(rustversion::cfg!(before(1.86)), "use std::any::Any with trait_upcasting");
+        let m: Box<MapValueCollector> = {
+            let result  = Box::into_raw(ui.callback.value.take().unwrap());
+            unsafe{ Box::from_raw( result.cast()) }
+        };
+        
+        // TODO: Check for errors and handle!
+        Ok(m.value)
+    }
+    pub fn info(&mut self, options: &commands::info::Options) -> Result<commands::info::Info, Error> {
+        let mut ui = UserInterface::new();
+        let m = self.run_map_output(&mut ui, "info", options.get_args())?;
+        commands::info::Info::deserialize(
+            serde::de::value::MapDeserializer::new(m.clone().into_iter())
+        ).map_err(|e| Error::SerializationError(e, m))
     }
 }
 
@@ -119,28 +180,31 @@ impl Drop for Client {
     }
 }
 
-/// UICallbackImplementation is exposed to C++ and handles message callbacks from P4ClientUser
-pub struct UICallbackImplementation {
-    value: Option<serde_json::map::Map<String, serde_json::Value>>,
+pub trait CallbackHandler: Any {
+    fn message(&mut self, message: &str);
 }
 
-impl UICallbackImplementation {
+/// UICallbackProxy is exposed to C++ and handles message callbacks from P4ClientUser
+/// It passes calls to a CallbackHandler, which can be set up to handle different types of message
+/// differently, depending on the actual perforce call being made. This avoids trying to teach CXX / C++
+/// about rust traits
+pub struct UICallbackProxy {
+    value: Option<Box<dyn CallbackHandler>>,
+}
+
+impl UICallbackProxy {
+    fn new(value: Option<Box<dyn CallbackHandler>>) -> UICallbackProxy {
+        UICallbackProxy{ value }
+    }
     fn message(&mut self, message: &str) {
-        let mut value = self
-            .value
-            .take()
-            .unwrap_or_else(|| serde_json::map::Map::new());
-
-        let m = message.to_string();
-        if let Some((a, b)) = m.split_once(":") {
-            value.insert(a.to_string(), b.trim().to_string().into());
+        if let Some(value) = &mut self.value {
+            value.message(message);
         } else {
-            info!("message: {}", message);
+            warn!("UICallbackProxy called without handler set");
         }
-
-        self.value = Some(value);
     }
 }
+
 #[cxx::bridge()]
 pub mod ffi {
     // Any shared structs, whose fields will be visible to both languages.
@@ -151,9 +215,9 @@ pub mod ffi {
     }
 
     extern "Rust" {
-        type UICallbackImplementation;
+        type UICallbackProxy;
 
-        fn message(self: &mut UICallbackImplementation, message: &str);
+        fn message(self: &mut UICallbackProxy, message: &str);
 
     }
 
@@ -185,7 +249,7 @@ pub mod ffi {
         ) -> UniquePtr<P4Error>;
         
         type P4ClientUser;
-        unsafe fn new_client_user(cb: *mut UICallbackImplementation) -> UniquePtr<P4ClientUser>;
+        unsafe fn new_client_user(cb: *mut UICallbackProxy) -> UniquePtr<P4ClientUser>;
 
     }
 }
