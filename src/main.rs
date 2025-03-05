@@ -25,13 +25,15 @@ pub mod commands;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("p4-rs Creating and connecting");
+    use commands::info::Options;
 
     let mut c = client::Options::new()
         .set_program("foo.rs")
         .set_port("localhost:1666")
         .connect()?;
 
-    let r = c.info(&commands::info::Options::new())?;
+    let info_opts = Options::new().shortened();
+    let r = c.info(&info_opts)?;
     println!("Result: {:?}", r);
     println!("User name: {}", r.user_name);
     

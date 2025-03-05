@@ -1,69 +1,112 @@
-# P4
+# P4-RS
 This is a **personal project** in building a Rust wrapper for the Perforce C++ API - as such it should not be expected to get
 a whole load of effort in any sustained way.
 
-In order to make it as idiomatic and easy to use, the goal is to implement basic bindings allowing access to the C++ API first, \
-and then wrap the whole thing with a more idiomatic and type safe Rust layer. Eventually, it would be nice to be able to expose everything 
-using a CLI that responds with JSON, or libraries that add bindings for other languages, reducing the implementation of wrappers.
-The challenge here is that the P4 API is fundamentally driven by whatever the server happens to respond with, usually a line-by-line response
-that needs parsing.
+My desire would be to see something that can be easily used in a few ways:
+1) As a typesafe layer enabling a very clean rust-native implementation
+2) As a non-typesafe layer enabling usage of commands that might not be implemented yet, or that have gaps / errors
+3) As an alternative CLI setup that's compatible with the existing CLI, but implementing more useful JSON output
+4) As a library that can be wrapped for other languages, hopefully extending a more ergonomic implementation that doesn't need as much effort to wrap for your purposes
 
-It has been my observation over years of working with Perforce clients that *everyone* ends up writing wrapper implementations.
-There is simultaneously no guarantee about the server responses, and everyone has implementations that rely heavily on it.
-By taking this challenge on in a low level systems language, we 
+Many Perforce client libraries force users to deal with the issue that most responses are effectively a line-based untyped
+response. This frequently forces users to build a wrapper around those libraries that parses and extracts the data they want.
+The Perforce implementation of JSON output for the current CLI doesn't actually simplify parsing / ingesting this.
 
-My desire is to create something that can be easily used in a few ways:
-* As a typesafe layer enabling a very clean rust-native implementation
-* As a non-typesafe layer enabling usage of commands that might not be implemented yet, or that have gaps / errors
-* As an alternative CLI setup that's compatible with the existing CLI, but implementing more useful JSON output
-* As a library that can be wrapped for other languages, hopefully extending a more ergonomic implementation that doesn't need as much effort to wrap for your purposes
+## Reasonableness of a usable implementation
+It's going to be a lot to do to get this code to the point where it's a production ready and fully featured implementation.
+It's not my day job, it's just something that I've wanted to see for a while, and I figure that demonstrating the idea 
+might inspire others. I don't even have the free time to make significant progress at any speed on it if I wanted to.
+
+As an individual, there's no reasonable way that I can see and test every possible setup and potential error.
+If you like the idea and want to see it advance, contribute in some way (or talk to me about taking over the project).
 
 # Current State
 
-Goals from above aside, the current implementation has some *very basics* just about working.  
-You can connect to a server:
+Of the above, `(2)` has significant progress - you can login and call `run()` with basic command arguments on a simple local server. 
+A lot of modes of the responses from P4 are not implemented yet in the UI object (eg. writing files, line based Map responses).
+`(1)` has a single (!) vertical slice - `info` is implemented as illustrated below:
+
 ```rust
-let c = client::Options::new()
-    .set_program("foo.rs")
-    .set_port("localhost:1666")
-    .connect()?;
+use commands::info::Options;
+let mut c = client::Options::new()
+  .set_program("foo.rs")
+  .set_port("localhost:1666")
+  .connect()?;
+
+let info_opts = Options::new().shortened();
+let r = c.info(&info_opts)?;
+println!("Result: {:?}", r);
+println!("User name: {}", r.user_name);
 ```
 
-You can run `info` and get a `serde_json::Value`:
-```rust
-let mut ui = client::UserInterface::new();
-let v = c.run(&mut ui, "info", Vec::<String>::new())?;
-println!("Result: {}", v);
+Using the builder pattern for options makes a lot of sense to me in terms of being both type safe, literate, and providing
+great visibility into what is possible within Rust using code completion etc.
+
+Result:
 ```
+Result: Info { 
+    case_handling: Insensitive, 
+    client_address: "127.0.0.1", 
+    client_host: "DESKTOP-123456", 
+    client_name: "DESKTOP-123456", 
+    client_root: None, 
+    current_dir: "d:\\projects\\p4", 
+    server_address: "localhost:1666", 
+    server_root: "C:/temp/p4", 
+    server_date: "2025/03/05 07:39:25 -0500 Eastern Standard Time", 
+    server_version: "P4D/NTX64/2022.2/2369846 (2022/11/14)", 
+    server_uptime: "00:00:03", 
+    user_name: "Redundancy" 
+}
+User name: Redundancy
+```
+Not all the fields are parsed to native Rust types yet (eg.  date, uptime, client IP).  
+Errors exist and can be raised from C++, but are not converted into particularly ergonomic error enums (or types).
+
 
 There is however, some probably not very great C++ that I'd love to go back to, in order to make some const-ness work:
 ```C++
-    char** c_arg = new char*[args.size()];
+char** c_arg = new char*[args.size()];
 
-    for (size_t i = 0; i < args.size(); ++i) {
-        auto s = args[i].size() + 1;
-        c_arg[i] = new char[s];
-        strcpy_s(c_arg[i], s, args[i].c_str());
-    }
+for (size_t i = 0; i < args.size(); ++i) {
+    auto s = args[i].size() + 1;
+    c_arg[i] = new char[s];
+    strcpy_s(c_arg[i], s, args[i].c_str());
+}
 
-    // char *const *
-    this->api.SetArgv(args.size(), c_arg);
+// char *const *
+this->api.SetArgv(args.size(), c_arg);
 
-    for (size_t i = 0; i < args.size(); ++i) {
-        delete[] c_arg[i];
-    }
-    delete[] c_arg;
+for (size_t i = 0; i < args.size(); ++i) {
+    delete[] c_arg[i];
+}
+delete[] c_arg;
 ```
 erk. There's probably a better way. PRs from people with a more active working knowledge of C++ appreciated.
 
-The goal would be to provide a version that *might* look more like:
-```rust
-Sync::new()
-    .force()
-    .metadata_only()
-    .with_global_args(...)
-    .run(&mut c)?;
-```
+However, what this illustrates is the basics of the plumbing are viable.
+
+# Desired State
+## Error Handling
+
+I expect two basic error types, with an extended set of specific ones:
+
+Firstly, some sort of serde-like "I couldn't build the type I was expecting from the response I got" error.  
+Second, a "here's an uncategorized error from P4 that I don't know how to interpret"
+
+After that, I'd expect to pull error types out of the second bucket, and into their own enumeration values to make the handling in
+Rust more ergonomic and compatible with a switch. 
+
+## Adding Commands
+Once the basics of the handling and parsing are done for the various ways that the P4 Server responds to the client, I expect it to be easy to add new commands and update the types/contents/expected responses of existing ones.
+
+## Handling changes to the server responses
+At the moment, the type safe implementation of Rust types is handled by serde. 
+This has a significant advantage that it has all the machinery for creating types and ensuring that all fields are initialized in an
+adequate way, while also potentially providing a very direct route to JSON marshalling (although the current types have rename directives
+to handle the P4 attribute names).
+
+Should serde not be able to fill all required fields of a struct, or if there were a type mismatch, it will return an error.
 
 # Understanding the CXX Wrapping
 
@@ -83,7 +126,7 @@ public:
     void set_port(rust::Str port);
     void set_argv(rust::Vec<rust::String> args);
 private:
-    ClientApi api;
+    ClientApi api; // <-- original P4 API object
 };
 ```
 P4ClientApi wholly contains a P4::ClientApi and makes the basic functionality callable from Rust.
@@ -94,7 +137,7 @@ pub struct Client {
     internal_client: cxx::UniquePtr<ffi::P4ClientApi>,
 }
 ```
-*This* type can be written to be fully idiomatic.
+*This* type can be written to be fully idiomatic and obscure the cxx-isms.
 
 ### Naming
 My general line of thought has been:
@@ -123,15 +166,19 @@ A whole test-suite by configuring an actual p4 server on the fly would be fantas
 The Perforce API is available from Perforce by visiting their site and agreeing to their license, then finding the version 
 that you need on their file server. It cannot be bundled with this project due to the license.
 
+NB: At the moment, this is installed on my machine at the highly specific path of `p4api-2021.1.2179737-vs2017_static`  
+This should probably be changed to just be `p4api`
+
 ### OpenSSL
 The version of the p4 OpenSSL dependency is determined (on windows) by: `strings librpc.lib | findstr /B OpenSSL`
 
 This uses Conan to get the OpenSSL dependencies from a pre-built source.  
 `conan install . -g deploy` from within the p4 folder should get OpenSSL and zlib.
-This is *significantly* easier than building OpenSSL from scratch yourself.
+This is *significantly* easier than building OpenSSL from scratch yourself and needing to try and install all sorts of dependencies.
 
 ### Perforce Server
-A working Perforce server is needed for testing. You'll either need an existing one, or to 
+A working Perforce server is needed for testing. You'll either need an existing one, or to use an individual license from perforce
+and download one. At the time of writing, Perforce supports free individual p4 server licenses up to 5 users.
 
 ## Linux Support
 Not planned yet. Feel free to test and PR, especially if you can add Github actions to fetch dependencies and build.

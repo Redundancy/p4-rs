@@ -61,7 +61,7 @@ pub struct Info {
     #[serde(rename = "Client name")]
     pub client_name: String,
     #[serde(rename = "Client root")]
-    pub client_root: String,
+    pub client_root: Option<String>,
     #[serde(rename = "Current directory")]
     pub current_dir: PathBuf,
 
