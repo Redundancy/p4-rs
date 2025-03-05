@@ -1,6 +1,6 @@
 # P4-RS
 This is a **personal project** in building a Rust wrapper for the Perforce C++ API - as such it should not be expected to get
-a whole load of effort in any sustained way.
+a whole load of effort in any sustained way and may never be "usable" in a production sense.
 
 My desire would be to see something that can be easily used in a few ways:
 1) As a typesafe layer enabling a very clean rust-native implementation
@@ -16,9 +16,9 @@ The Perforce implementation of JSON output for the current CLI doesn't actually 
 It's going to be a lot to do to get this code to the point where it's a production ready and fully featured implementation.
 It's not my day job, it's just something that I've wanted to see for a while, and I figure that demonstrating the idea 
 might inspire others. I don't even have the free time to make significant progress at any speed on it if I wanted to.
+Getting as far as I have has been a significant amount of learning, which is what I was looking for in a personal project.
 
 As an individual, there's no reasonable way that I can see and test every possible setup and potential error.
-If you like the idea and want to see it advance, contribute in some way (or talk to me about taking over the project).
 
 # Current State
 
@@ -157,7 +157,6 @@ So now we're handling the callbacks in `UICallbackProxy`, and we dispatch them t
 trait that anyone can implement using only Rust - this being the major objective of the whole daisy chain.
 
 # Building
-
 I'd like to get this set up to auto-build using Github actions.  (https://github.com/perforce/p4python may provide inspiration)  
 A whole test-suite by configuring an actual p4 server on the fly would be fantastic.
 
@@ -181,7 +180,7 @@ A working Perforce server is needed for testing. You'll either need an existing 
 and download one. At the time of writing, Perforce supports free individual p4 server licenses up to 5 users.
 
 ## Linux Support
-Not planned yet. Feel free to test and PR, especially if you can add Github actions to fetch dependencies and build.
+Not implemented. Probably easy-ish.
 
 
 
