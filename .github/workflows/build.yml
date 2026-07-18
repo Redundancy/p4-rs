@@ -78,13 +78,22 @@ jobs:
           Move-Item $inner.FullName p4api
 
       # p4api must be on disk before this: conanfile.py scans it to pick OpenSSL.
+      # Build the profile explicitly rather than with `--detect`: on the runner,
+      # `--detect` finds MinGW/gcc and writes a `compiler.libcxx` that is invalid
+      # once we switch compiler to Visual Studio. Starting from an empty profile
+      # avoids that contamination.
       - name: Conan install (OpenSSL + zlib, version matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
-          conan profile new default --detect
+          conan profile new default --force
+          conan profile update settings.os=Windows default
+          conan profile update settings.os_build=Windows default
+          conan profile update settings.arch=x86_64 default
+          conan profile update settings.arch_build=x86_64 default
           conan profile update settings.compiler="Visual Studio" default
           conan profile update settings.compiler.version=16 default
           conan profile update settings.compiler.runtime=MD default
+          conan profile update settings.build_type=Release default
           conan install . --build=missing
 
       - name: Expose SDK path
