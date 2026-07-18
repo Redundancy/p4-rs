@@ -77,7 +77,12 @@ jobs:
           $inner = Get-ChildItem -Directory p4api-extracted | Select-Object -First 1
           Move-Item $inner.FullName p4api
 
-      # p4api must be on disk before this: conanfile.py scans it to pick OpenSSL.
+      # Set P4API_PATH before Conan so conanfile.py reads the OpenSSL version from
+      # this exact SDK (deterministic) instead of scanning for a p4api* directory.
+      - name: Expose SDK path
+        shell: pwsh
+        run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
+
       # Build the profile explicitly rather than with `--detect`: on the runner,
       # `--detect` finds MinGW/gcc and writes a `compiler.libcxx` that is invalid
       # once we switch compiler to Visual Studio. Starting from an empty profile
@@ -95,10 +100,6 @@ jobs:
           conan profile update settings.compiler.runtime=MD default
           conan profile update settings.build_type=Release default
           conan install . --build=missing
-
-      - name: Expose SDK path
-        shell: pwsh
-        run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
 
       - name: Format check (advisory)
         continue-on-error: true
@@ -172,15 +173,17 @@ jobs:
           tar -xzf p4api.tgz -C p4api-extracted
           mv "$(find p4api-extracted -maxdepth 1 -mindepth 1 -type d | head -n1)" p4api
 
+      # Set P4API_PATH before Conan so conanfile.py reads the OpenSSL version from
+      # this exact SDK (deterministic) instead of scanning for a p4api* directory.
+      - name: Expose SDK path
+        run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
+
       - name: Conan install (OpenSSL + zlib, version matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           conan profile new default --detect
           conan profile update settings.compiler.libcxx=libstdc++11 default
           conan install . --build=missing
-
-      - name: Expose SDK path
-        run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
 
       - name: Format check (advisory)
         continue-on-error: true

@@ -28,9 +28,12 @@ class P4RsConan(ConanFile):
         env = os.environ.get("P4API_PATH")
         if env:
             return env if os.path.isabs(env) else os.path.join(_HERE, env)
+        # Fall back to scanning. Require a lib/ subdir so an empty leftover like
+        # `p4api-extracted/` (from unzip) can't be chosen over the real SDK dir.
         candidates = sorted(
             d for d in os.listdir(_HERE)
-            if d.startswith("p4api") and os.path.isdir(os.path.join(_HERE, d))
+            if d.startswith("p4api")
+            and os.path.isdir(os.path.join(_HERE, d, "lib"))
         )
         return os.path.join(_HERE, candidates[-1]) if candidates else None
 
