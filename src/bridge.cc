@@ -2,6 +2,7 @@
 #include "p4/src/client.rs.h"
 #include <memory>
 #include <iostream>
+#include <cstring>
 
 
 std::unique_ptr<P4Error> placeholder_error() {
@@ -48,7 +49,10 @@ void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
     for (size_t i = 0; i < args.size(); ++i) {
         auto s = args[i].size() + 1;
         c_arg[i] = new char[s];
-        strcpy_s(c_arg[i], s, args[i].c_str());
+        // s counts the NUL terminator, and c_str() is NUL-terminated, so this
+        // copies the whole string + terminator. (strcpy_s is MSVC-only; memcpy
+        // is portable and we already know the exact length.)
+        std::memcpy(c_arg[i], args[i].c_str(), s);
     }
 
     this->api.SetArgv(args.size(), /* char *const * */ c_arg);
