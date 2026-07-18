@@ -2,8 +2,12 @@
 #include "rust/cxx.h"
 
 #include <memory>
-#include "p4/p4api-2021.1.2179737-vs2017_static/include/p4/clientapi.h"
-#include "p4/p4api-2021.1.2179737-vs2017_static/include/p4/error.h"
+
+// The Perforce C++ API. The SDK's own include directory is added to the compiler
+// include path by build.rs (from P4API_PATH), so these are version-independent --
+// do not hardcode the SDK release here.
+#include "p4/clientapi.h"
+#include "p4/error.h"
 
 //struct ErrorGeneric;
 struct ErrID;

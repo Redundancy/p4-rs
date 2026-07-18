@@ -2,6 +2,8 @@
 #include "p4/src/client.rs.h"
 #include <memory>
 #include <iostream>
+#include <string>
+#include <vector>
 
 
 std::unique_ptr<P4Error> placeholder_error() {
@@ -43,20 +45,23 @@ std::unique_ptr<P4Error> P4ClientApi::finalizer() {
 }
 
 void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
-    char** c_arg = new char*[args.size()];
-
-    for (size_t i = 0; i < args.size(); ++i) {
-        auto s = args[i].size() + 1;
-        c_arg[i] = new char[s];
-        strcpy_s(c_arg[i], s, args[i].c_str());
+    // Own the argument bytes in std::strings: RAII frees them automatically (no
+    // manual new/delete to leak, and exception-safe), std::string keeps the exact
+    // bytes, and c_str() gives the NUL-terminated pointers SetArgv expects.
+    std::vector<std::string> owned;
+    owned.reserve(args.size());
+    for (const auto& arg : args) {
+        owned.emplace_back(arg.data(), arg.size());
     }
 
-    this->api.SetArgv(args.size(), /* char *const * */ c_arg);
-
-    for (size_t i = 0; i < args.size(); ++i) {
-        delete[] c_arg[i];
+    std::vector<char*> argv;
+    argv.reserve(owned.size());
+    for (auto& s : owned) {
+        argv.push_back(const_cast<char*>(s.c_str()));
     }
-    delete[] c_arg;
+
+    // SetArgv takes char *const * and does not modify the strings.
+    this->api.SetArgv(static_cast<int>(argv.size()), argv.data());
 }
 
 // TODO: void return, get errors from callbacks
@@ -76,7 +81,7 @@ int P4Error::severity() const {
 }
 
 rust::Vec<ErrID> P4Error::errors() const {
-    auto x = rust::Vec<ErrID>::Vec();
+    auto x = rust::Vec<ErrID>();
     for (int i = 0; i < this->error.GetErrorCount(); i++) {
         auto e = this->error.GetId(i);
         x.push_back(
