@@ -5,3 +5,18 @@
 
 /perforce-server
 /temp
+
+# Conan-fetched deps and generated output (conanfile.py is kept; these are not)
+/bin
+conanbuildinfo.txt
+conaninfo.txt
+graph_info.json
+deploy_manifest.txt
+conan.lock
+
+# Python bytecode (e.g. from syntax-checking conanfile.py)
+__pycache__/
+*.pyc
+
+# IDE
+/.idea/

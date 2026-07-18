@@ -1,0 +1,199 @@
+name: build
+
+# Builds p4-rs on Windows (MSVC) and Linux (glibc), in the spirit of
+# perforce/p4python: the Perforce C++ API is downloaded from Perforce filehost at
+# build time (cached, never committed) and OpenSSL/zlib come from Conan. Each job
+# downloads its own SDK, and conanfile.py + build.rs read the OpenSSL version out
+# of that SDK, so nothing about OpenSSL is hardcoded.
+#
+# NOTE (first-run tuning): the SDK download coordinates can't be validated offline.
+# The P4_RELEASE / *_ZIP / *_TGZ names must be real filehost paths for that release
+# -- browse https://filehost.perforce.com/perforce/ to confirm. If ConanCenter
+# lacks the exact OpenSSL patch letter the SDK reports, set OPENSSL_VERSION (per job)
+# to the nearest one in the same series to override the detection.
+#
+# fmt/clippy run as advisory (continue-on-error) so they surface issues without
+# failing the build; flip them to blocking once the tree is clean.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  P4_RELEASE: r21.1
+  FILEHOST: https://cdist2.perforce.com/perforce
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      P4_PLATFORM: bin.ntx64
+      P4API_ZIP: p4api_vs2017_static.zip
+      # OPENSSL_VERSION: "1.0.2u"   # uncomment only to override the SDK-detected version
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+
+      - name: Set up Python (for Conan)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Conan 1.x
+        run: pip install "conan<2"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            p4api
+            openssl
+            zlib
+            ~/.conan
+          key: deps-${{ runner.os }}-${{ env.P4_RELEASE }}-${{ env.P4API_ZIP }}-${{ hashFiles('conanfile.py') }}
+
+      - name: Download P4 C++ API
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "$env:FILEHOST/$env:P4_RELEASE/$env:P4_PLATFORM/$env:P4API_ZIP"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile p4api.zip
+          Expand-Archive -Path p4api.zip -DestinationPath p4api-extracted
+          $inner = Get-ChildItem -Directory p4api-extracted | Select-Object -First 1
+          Move-Item $inner.FullName p4api
+
+      # p4api must be on disk before this: conanfile.py scans it to pick OpenSSL.
+      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          conan profile new default --detect
+          conan profile update settings.compiler="Visual Studio" default
+          conan profile update settings.compiler.version=16 default
+          conan profile update settings.compiler.runtime=MD default
+          conan install . --build=missing
+
+      - name: Expose SDK path
+        shell: pwsh
+        run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
+
+      - name: Format check (advisory)
+        continue-on-error: true
+        run: cargo fmt --all --check
+
+      - name: Clippy (advisory)
+        continue-on-error: true
+        run: cargo clippy --all-targets
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Tests
+        run: cargo test --release
+
+      - name: Stage artifact with license
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/p4-rs.exe dist/
+          Copy-Item LICENSE.txt dist/
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-rs-windows-x86_64
+          path: dist/
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      P4_PLATFORM: bin.linux26x86_64
+      P4API_TGZ: p4api-glibc2.3-openssl1.1.1.tgz
+      # OPENSSL_VERSION: "1.1.1w"   # uncomment only to override the SDK-detected version
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add rustfmt clippy
+
+      - name: Set up Python (for Conan)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Conan 1.x
+        run: pip install "conan<2"
+
+      - name: Cache dependencies
+        id: cache-deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            p4api
+            openssl
+            zlib
+            ~/.conan
+          key: deps-${{ runner.os }}-${{ env.P4_RELEASE }}-${{ env.P4API_TGZ }}-${{ hashFiles('conanfile.py') }}
+
+      - name: Download P4 C++ API
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          url="$FILEHOST/$P4_RELEASE/$P4_PLATFORM/$P4API_TGZ"
+          echo "Downloading $url"
+          curl -fSL "$url" -o p4api.tgz
+          mkdir -p p4api-extracted
+          tar -xzf p4api.tgz -C p4api-extracted
+          mv "$(find p4api-extracted -maxdepth 1 -mindepth 1 -type d | head -n1)" p4api
+
+      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          conan profile new default --detect
+          conan profile update settings.compiler.libcxx=libstdc++11 default
+          conan install . --build=missing
+
+      - name: Expose SDK path
+        run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
+
+      - name: Format check (advisory)
+        continue-on-error: true
+        run: cargo fmt --all --check
+
+      - name: Clippy (advisory)
+        continue-on-error: true
+        run: cargo clippy --all-targets
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Tests
+        run: cargo test --release
+
+      - name: Stage artifact with license
+        run: |
+          mkdir -p dist
+          cp target/release/p4-rs dist/
+          cp LICENSE.txt dist/
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: p4-rs-linux-x86_64
+          path: dist/
+          if-no-files-found: error
