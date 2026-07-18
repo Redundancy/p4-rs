@@ -66,3 +66,10 @@ class P4RsConan(ConanFile):
                 "openssl/%s. Set OPENSSL_VERSION to override." % version
             )
         self.requires("openssl/%s" % version)
+
+        # OpenSSL pulls in zlib transitively. The old pinned zlib (1.2.12) can no
+        # longer be built from source in CI -- its upstream tarball is gone from
+        # zlib.net (HTTP 415 on the fossil), and no prebuilt matches the runner's
+        # modern toolchain. Override to a current zlib whose source and binaries
+        # still resolve; zlib keeps its ABI stable across these versions.
+        self.requires("zlib/1.3.1", override=True)
