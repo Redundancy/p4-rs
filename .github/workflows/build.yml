@@ -17,7 +17,9 @@ name: build
 
 on:
   push:
-    branches: [main]
+    # `add-ci-crossplatform-build` is here temporarily so CI runs on the branch
+    # while validating it; remove it (the PR trigger covers review) before merge.
+    branches: [main, add-ci-crossplatform-build]
   pull_request:
     branches: [main]
   workflow_dispatch:
