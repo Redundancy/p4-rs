@@ -20,9 +20,7 @@ name: build
 
 on:
   push:
-    # `update-p4api` is here temporarily to validate the upgrade on the branch;
-    # remove it before merge (the PR trigger covers review).
-    branches: [main, update-p4api]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
