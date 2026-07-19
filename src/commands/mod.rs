@@ -1,8 +1,10 @@
-mod helpers;
 pub mod branch;
+pub mod change;
 pub mod changes;
 pub mod client;
 pub mod clients;
 pub mod counters;
+pub mod describe;
+mod helpers;
 pub mod info;
 pub mod users;
