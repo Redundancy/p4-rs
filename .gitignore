@@ -21,3 +21,6 @@ __pycache__/
 
 # IDE
 /.idea/
+
+# Claude Code agent worktrees / local session state
+/.claude/

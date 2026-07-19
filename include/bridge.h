@@ -2,6 +2,7 @@
 #include "rust/cxx.h"
 
 #include <memory>
+#include <string>
 
 // The Perforce C++ API. The SDK's own include directory is added to the compiler
 // include path by build.rs (from P4API_PATH), so these are version-independent --
@@ -63,11 +64,20 @@ public:
     virtual void Message( Error *err );
     virtual void HandleError( Error *err );
     virtual void OutputStat( StrDict *varList );
+    virtual void InputData( StrBuf *strbuf, Error *e );
+
+    // Provide the data the next command will read as input (e.g. the spec form
+    // for `client -i` / `user -i`). Consumed by the first InputData callback.
+    void set_input(rust::Str input);
 
     // Warnings and errors reported during the most recent Run. Info-level
     // messages go to the Rust callback; everything worse accumulates here so
     // P4ClientApi::run can return it instead of dropping it.
     Error errors;
+
+    // Pending input for InputData, delivered at most once per set_input.
+    std::string input;
+    bool has_input = false;
 
     // Rust callback functions used
     // We're using a raw pointer because we never give this ownership

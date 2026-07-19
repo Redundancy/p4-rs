@@ -1,17 +1,28 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::client::{Client, UserInterface};
+use crate::commands::helpers::optional_string;
+use crate::errors::Error;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::str::FromStr;
 
-/// Deserialize a field that is optional-by-absence: when the key is present its
-/// value is a plain string (wrap in Some); when absent, `#[serde(default)]`
-/// supplies None. Needed because MapDeserializer's string values don't support
-/// serde's native Option handling (a present value fails with
-/// "invalid type: string, expected option").
-fn optional_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(d).map(Some)
+impl Client {
+    /// Typed `p4 info`.
+    pub fn info(&mut self, options: &Options) -> Result<Info, Error> {
+        let mut ui = UserInterface::new();
+        let mut records = self.run_records(&mut ui, "info", options.get_args())?;
+        // info produces exactly one tagged record; deserializing an empty map
+        // (no output) reports the missing fields through SerializationError.
+        let m = if records.is_empty() {
+            HashMap::new()
+        } else {
+            records.swap_remove(0)
+        };
+        Info::deserialize(serde::de::value::MapDeserializer::new(
+            m.clone().into_iter(),
+        ))
+        .map_err(|e| Error::SerializationError(e, m))
+    }
 }
 
 pub struct Options {

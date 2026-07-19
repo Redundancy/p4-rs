@@ -310,19 +310,12 @@ impl crate::client::Client {
         LabelSpec::from_record(m)
     }
 
-    /// Save a label spec (`p4 label -i`).
-    ///
-    /// The form is submitted to the server on stdin via
-    /// `ClientUser::InputData`. [`LabelSpec::to_spec_text`] produces that
-    /// payload; wiring it to the server requires an input channel on the FFI
-    /// bridge (`P4ClientUser::InputData`). Until the bridge exposes one, the
-    /// server receives an empty form and returns a "missing required field"
-    /// error -- the serialization is complete and correct, only the transport
-    /// hookup is pending.
+    /// Create or update a label spec (`p4 label -i`), feeding the form to the
+    /// server through the bridge's input channel.
     pub fn save_label_spec(&mut self, spec: &LabelSpec) -> Result<(), Error> {
         let mut ui = UserInterface::new();
-        let _form = spec.to_spec_text();
-        self.run(&mut ui, "label", vec!["-i".to_string()])?;
+        ui.set_input(&spec.to_spec_text());
+        self.run_records(&mut ui, "label", vec!["-i".to_string()])?;
         Ok(())
     }
 }

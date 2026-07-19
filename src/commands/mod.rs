@@ -1,2 +1,14 @@
+pub mod branch;
+pub mod change;
+pub mod changes;
+pub mod client;
+pub mod clients;
+pub mod counters;
+pub mod depot;
+pub mod describe;
+pub mod group;
+mod helpers;
 pub mod info;
 pub mod label;
+pub mod user;
+pub mod users;
