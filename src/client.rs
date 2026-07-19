@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use cxx::UniquePtr;
-use log::warn;
+use log::{info, warn};
 use serde::Deserialize;
 use crate::commands;
 use crate::errors::{Error, P4InternalError};
@@ -122,6 +122,25 @@ impl CallbackHandler for MapValueCollector {
     }
 }
 
+/// Collects tagged-protocol output: one HashMap per record. This is the robust
+/// path -- keys arrive structured from the server (via OutputStat) rather than
+/// being parsed back out of human-formatted text, and multi-record commands
+/// (changes, files, fstat...) produce one entry per record.
+struct RecordsCollector {
+    records: Vec<HashMap<String, String>>,
+}
+
+impl CallbackHandler for RecordsCollector {
+    fn message(&mut self, message: &str) {
+        // Untagged text alongside tagged records is informational only.
+        info!("p4: {}", message);
+    }
+
+    fn output_stat(&mut self, record: HashMap<String, String>) {
+        self.records.push(record);
+    }
+}
+
 
 impl Client {
     pub fn run(
@@ -166,9 +185,39 @@ impl Client {
 
         Ok(m.value)
     }
+    /// Run a command in tagged mode and return its records raw -- the
+    /// non-typesafe escape hatch for commands without a typed wrapper yet.
+    pub fn run_records(
+        &mut self,
+        ui: &mut UserInterface,
+        command: &str,
+        args: Vec<String>,
+    ) -> Result<Vec<HashMap<String, String>>, Error> {
+        let mut api = self.internal_client.as_mut().unwrap();
+        ui.callback.value = Some(Box::new(RecordsCollector { records: Vec::new() }));
+
+        api.as_mut().set_argv(args);
+        let err = api.as_mut().run(ui.internal.pin_mut(), command);
+        if err.is_error() {
+            return Err(P4InternalError::new(err).into());
+        }
+
+        let m: Box<RecordsCollector> = (ui.callback.value.take().unwrap() as Box<dyn Any>)
+            .downcast()
+            .expect("collector should be the RecordsCollector set above");
+        Ok(m.records)
+    }
+
     pub fn info(&mut self, options: &commands::info::Options) -> Result<commands::info::Info, Error> {
         let mut ui = UserInterface::new();
-        let m = self.run_map_output(&mut ui, "info", options.get_args())?;
+        let mut records = self.run_records(&mut ui, "info", options.get_args())?;
+        // info produces exactly one tagged record; deserializing an empty map
+        // (no output) reports the missing fields through SerializationError.
+        let m = if records.is_empty() {
+            HashMap::new()
+        } else {
+            records.swap_remove(0)
+        };
         commands::info::Info::deserialize(
             serde::de::value::MapDeserializer::new(m.clone().into_iter())
         ).map_err(|e| Error::SerializationError(e, m))
@@ -188,6 +237,10 @@ impl Drop for Client {
 
 pub trait CallbackHandler: Any {
     fn message(&mut self, message: &str);
+
+    /// One tagged-protocol record (from ClientUser::OutputStat). Collectors
+    /// that only consume untagged text can ignore these.
+    fn output_stat(&mut self, _record: HashMap<String, String>) {}
 }
 
 /// UICallbackProxy is exposed to C++ and handles message callbacks from P4ClientUser
@@ -207,6 +260,13 @@ impl UICallbackProxy {
             value.message(message);
         } else {
             warn!("UICallbackProxy called without handler set");
+        }
+    }
+    fn output_stat(&mut self, vars: Vec<ffi::KV>) {
+        if let Some(value) = &mut self.value {
+            value.output_stat(vars.into_iter().map(|kv| (kv.key, kv.value)).collect());
+        } else {
+            warn!("UICallbackProxy output_stat called without handler set");
         }
     }
 }
@@ -239,6 +299,19 @@ mod tests {
     }
 
     #[test]
+    fn records_collector_accumulates_tagged_records() {
+        let mut b: Box<dyn CallbackHandler> = Box::new(RecordsCollector { records: Vec::new() });
+        b.output_stat([("change".to_string(), "123".to_string())].into_iter().collect());
+        b.output_stat([("change".to_string(), "122".to_string())].into_iter().collect());
+        b.message("informational text does not become a record");
+
+        let r: Box<RecordsCollector> = (b as Box<dyn Any>).downcast().expect("downcast");
+        assert_eq!(r.records.len(), 2);
+        assert_eq!(r.records[0].get("change").map(String::as_str), Some("123"));
+        assert_eq!(r.records[1].get("change").map(String::as_str), Some("122"));
+    }
+
+    #[test]
     fn json_collector_builds_object() {
         let mut b: Box<dyn CallbackHandler> = Box::new(JsonValueCollector { value: None });
         b.message("clientName: my-workspace");
@@ -258,10 +331,18 @@ pub mod ffi {
         fmt: String,
     }
 
+    /// One key/value pair of a tagged-output record (ClientUser::OutputStat).
+    #[derive(Debug)]
+    struct KV {
+        key: String,
+        value: String,
+    }
+
     extern "Rust" {
         type UICallbackProxy;
 
         fn message(self: &mut UICallbackProxy, message: &str);
+        fn output_stat(self: &mut UICallbackProxy, vars: Vec<KV>);
 
     }
 

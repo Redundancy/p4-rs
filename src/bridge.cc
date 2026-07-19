@@ -24,6 +24,10 @@ rust::String P4ClientApi::get_version() {
 
 std::unique_ptr<P4Error> P4ClientApi::init() {
     auto e = std::make_unique<P4Error>();
+    // Tagged protocol: structured records arrive via ClientUser::OutputStat as
+    // key/value dicts instead of pre-formatted text lines. Must be set before
+    // Init. Commands without tagged support still report through Message.
+    this->api.SetProtocol("tag", "");
     this->api.Init(&e->error);
     return e;
 }
@@ -152,4 +156,26 @@ void P4ClientUser::HandleError( Error* err ) {
         return;
     }
     this->errors.Merge(*err);
+}
+
+// Tagged-protocol output: one call per record, as a StrDict of key/values.
+// Forward each record to the Rust proxy as a vector of pairs.
+void P4ClientUser::OutputStat( StrDict* varList ) {
+    if (varList == nullptr || this->impl == nullptr) {
+        return;
+    }
+
+    rust::Vec<KV> vars;
+    StrRef var, val;
+    for (int i = 0; varList->GetVar(i, var, val); i++) {
+        // Protocol bookkeeping, not user data.
+        if (var == "func") {
+            continue;
+        }
+        KV kv;
+        kv.key = rust::String(var.Text(), var.Length());
+        kv.value = rust::String(val.Text(), val.Length());
+        vars.push_back(std::move(kv));
+    }
+    this->impl->output_stat(std::move(vars));
 }

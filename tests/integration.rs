@@ -127,6 +127,24 @@ fn info_roundtrip() {
 
 #[test]
 #[ignore = "requires P4D_BIN; run with `cargo test -- --ignored`"]
+fn run_records_on_multi_record_command() {
+    let Some(server) = TestServer::start("records") else {
+        skip("run_records_on_multi_record_command");
+        return;
+    };
+
+    let mut c = server.connect();
+    let mut ui = client::UserInterface::new();
+    // A fresh server has no changelists: the command succeeds with 0 records
+    // (as opposed to erroring or fabricating output).
+    let records = c
+        .run_records(&mut ui, "changes", Vec::new())
+        .expect("changes against a live p4d");
+    assert!(records.is_empty(), "fresh server should have no changes");
+}
+
+#[test]
+#[ignore = "requires P4D_BIN; run with `cargo test -- --ignored`"]
 fn unknown_command_returns_err() {
     let Some(server) = TestServer::start("badcmd") else {
         skip("unknown_command_returns_err");

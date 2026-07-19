@@ -60,6 +60,7 @@ public:
     // C++ Callback functions from p4api::ClientUser
     virtual void Message( Error *err );
     virtual void HandleError( Error *err );
+    virtual void OutputStat( StrDict *varList );
 
     // Warnings and errors reported during the most recent Run. Info-level
     // messages go to the Rust callback; everything worse accumulates here so
