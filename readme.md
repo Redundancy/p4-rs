@@ -165,8 +165,9 @@ A whole test-suite by configuring an actual p4 server on the fly would be fantas
 The Perforce API is available from Perforce by visiting their site and agreeing to their license, then finding the version 
 that you need on their file server. It cannot be bundled with this project due to the license.
 
-NB: At the moment, this is installed on my machine at the highly specific path of `p4api-2021.1.2179737-vs2017_static`  
-This should probably be changed to just be `p4api`
+NB: the build reads `P4API_PATH` to locate the SDK (defaulting to a vendored versioned
+directory such as `p4api-2025.2.2907753-vs2022_static`), so you can point it wherever the
+API is unpacked rather than relying on a fixed path.
 
 ### OpenSSL
 The version of the p4 OpenSSL dependency is determined (on windows) by: `strings librpc.lib | findstr /B OpenSSL`

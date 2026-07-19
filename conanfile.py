@@ -22,7 +22,7 @@ class P4RsConan(ConanFile):
     generators = "deploy"
 
     # Used only if the SDK can't be scanned (e.g. the lib isn't present yet).
-    default_openssl_version = "1.0.2t"
+    default_openssl_version = "3.0.15"
 
     def _p4api_dir(self):
         env = os.environ.get("P4API_PATH")
