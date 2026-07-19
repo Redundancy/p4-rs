@@ -89,14 +89,17 @@ jobs:
         shell: pwsh
         run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
 
-      # Conan 2 auto-detects msvc + runtime=dynamic on the runner (the MinGW/libcxx
-      # contamination that plagued Conan 1's --detect isn't an issue here). The
-      # deploy_flat deployer writes the flat openssl/ + zlib/ layout build.rs wants.
-      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+      # Conan 2 auto-detects msvc + runtime=dynamic on the runner. We pin
+      # compiler.version=194 (VS2022) because center2 publishes a prebuilt OpenSSL
+      # for that config -- so OpenSSL is DOWNLOADED, never built from source (which
+      # would need perl/nasm). OpenSSL is C and ABI-stable across MSVC versions, so
+      # a 194-built OpenSSL links fine even if the bridge is compiled by another
+      # MSVC. The deploy_flat deployer writes the flat openssl/ + zlib/ layout.
+      - name: Conan install (prebuilt OpenSSL + zlib, matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           conan profile detect --force
-          conan install . --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
+          conan install . -s compiler.version=194 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
       - name: Format check (advisory)
         continue-on-error: true
@@ -177,13 +180,16 @@ jobs:
       - name: Expose SDK path
         run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
 
-      # Conan 2 auto-detects gcc + libstdc++11. The deploy_flat deployer writes the
-      # flat openssl/ + zlib/ layout build.rs wants.
-      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+      # Conan 2 auto-detects gcc + libstdc++11. We pin compiler.version=13 because
+      # center2 publishes a prebuilt OpenSSL for that config -- so OpenSSL is
+      # DOWNLOADED, never built from source (no perl/nasm). OpenSSL is C and
+      # ABI-stable across gcc versions, so a gcc-13 build links fine regardless of
+      # the bridge's gcc. The deploy_flat deployer writes the flat layout.
+      - name: Conan install (prebuilt OpenSSL + zlib, matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
           conan profile detect --force
-          conan install . --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
+          conan install . -s compiler.version=13 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
       - name: Format check (advisory)
         continue-on-error: true

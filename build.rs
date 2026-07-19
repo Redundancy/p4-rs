@@ -73,6 +73,9 @@ fn main() {
         };
         println!("cargo:rustc-link-lib={ssl_lib}");
         println!("cargo:rustc-link-lib={crypto_lib}");
+        // OpenSSL 3 is built with zlib support, so libcrypto references zlib
+        // (deflate/inflate/...). Conan's zlib package is `zlib.lib` on Windows.
+        println!("cargo:rustc-link-lib=zlib");
 
         println!("cargo:rustc-link-lib=crypt32");
         println!("cargo:rustc-link-lib=Gdi32");
