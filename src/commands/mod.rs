@@ -8,5 +8,6 @@ pub mod describe;
 pub mod group;
 mod helpers;
 pub mod info;
+pub mod label;
 pub mod user;
 pub mod users;
