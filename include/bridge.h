@@ -41,6 +41,10 @@ public:
     void set_port(rust::Str port);
     void set_user(rust::Str user);
     void set_client(rust::Str client);
+    // Path to the tickets file `login` reads/writes. Left unset, the API uses
+    // its default (P4TICKETS / ~/.p4tickets); pointing it elsewhere keeps a
+    // process (or a test) from touching the user's shared tickets file.
+    void set_ticket_file(rust::Str path);
     void set_argv(rust::Vec<rust::String> args);
 
     std::unique_ptr<P4Error> finalizer();
@@ -65,10 +69,16 @@ public:
     virtual void HandleError( Error *err );
     virtual void OutputStat( StrDict *varList );
     virtual void InputData( StrBuf *strbuf, Error *e );
+    virtual void Prompt( const StrPtr &msg, StrBuf &rsp, int noEcho, Error *e );
 
     // Provide the data the next command will read as input (e.g. the spec form
     // for `client -i` / `user -i`). Consumed by the first InputData callback.
     void set_input(rust::Str input);
+
+    // Provide the response to the next server Prompt -- e.g. the password
+    // `login` asks for. Consumed by the first Prompt callback. Kept separate
+    // from `input` because a single run can both read input and be prompted.
+    void set_prompt_response(rust::Str response);
 
     // Warnings and errors reported during the most recent Run. Info-level
     // messages go to the Rust callback; everything worse accumulates here so
@@ -78,6 +88,11 @@ public:
     // Pending input for InputData, delivered at most once per set_input.
     std::string input;
     bool has_input = false;
+
+    // Pending response for Prompt (e.g. a password), delivered at most once
+    // per set_prompt_response.
+    std::string prompt_response;
+    bool has_prompt_response = false;
 
     // Rust callback functions used
     // We're using a raw pointer because we never give this ownership

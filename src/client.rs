@@ -9,6 +9,7 @@ pub struct Options {
     port: Option<String>,
     user: Option<String>,
     client: Option<String>,
+    ticket_file: Option<String>,
 }
 
 /// Client is the Rust-facing implementation of a P4ClientApi
@@ -52,6 +53,14 @@ impl UserInterface {
     pub fn set_input(&mut self, input: &str) {
         self.internal.pin_mut().set_input(input);
     }
+
+    /// Provide the response to the next server prompt -- e.g. the password
+    /// `login` asks for. Consumed by the first prompt. Separate from
+    /// [`set_input`](Self::set_input) so a single command can both read input
+    /// and answer a prompt.
+    pub fn set_password(&mut self, password: &str) {
+        self.internal.pin_mut().set_prompt_response(password);
+    }
 }
 
 impl Default for Options {
@@ -73,6 +82,7 @@ impl Options {
             program: None,
             user: None,
             client: None,
+            ticket_file: None,
         }
     }
 
@@ -99,6 +109,14 @@ impl Options {
         self
     }
 
+    /// P4TICKETS -- the file `login` stores tickets in. Left unset, the API
+    /// uses its default; point it elsewhere to avoid touching the user's
+    /// shared tickets file (e.g. per-process or per-test isolation).
+    pub fn set_ticket_file(mut self, path: &str) -> Options {
+        self.ticket_file = Some(path.to_string());
+        self
+    }
+
     pub fn connect(mut self) -> Result<Client, P4InternalError> {
         let mut connection = ffi::new_client_api();
         self.pre_init_settings(&mut connection);
@@ -109,6 +127,16 @@ impl Options {
             // whose Drop would call Final() -- only valid after a successful Init.
             return Err(P4InternalError::new(err));
         }
+
+        // The tickets file must be set *after* Init: Init re-resolves it from
+        // the environment/registry, so an override applied earlier is lost.
+        if let Some(ticket_file) = &self.ticket_file {
+            connection
+                .as_mut()
+                .unwrap()
+                .set_ticket_file(ticket_file.as_str());
+        }
+
         Ok(Client::new(connection))
     }
 
@@ -357,6 +385,7 @@ pub mod ffi {
         fn set_port(self: Pin<&mut P4ClientApi>, port: &str);
         fn set_user(self: Pin<&mut P4ClientApi>, user: &str);
         fn set_client(self: Pin<&mut P4ClientApi>, client: &str);
+        fn set_ticket_file(self: Pin<&mut P4ClientApi>, path: &str);
 
         fn finalizer(self: Pin<&mut P4ClientApi>) -> UniquePtr<P4Error>;
 
@@ -376,6 +405,7 @@ pub mod ffi {
         /// boxed at a stable address.
         unsafe fn new_client_user(cb: *mut UICallbackProxy) -> UniquePtr<P4ClientUser>;
         fn set_input(self: Pin<&mut P4ClientUser>, input: &str);
+        fn set_prompt_response(self: Pin<&mut P4ClientUser>, response: &str);
 
     }
 }
