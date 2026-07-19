@@ -134,14 +134,14 @@ impl Client {
         
         api.as_mut().set_argv(args);
         api.as_mut().run(ui.internal.pin_mut(), command);
-        
-        assert!(rustversion::cfg!(before(1.86)), "use std::any::Any with trait_upcasting");
-        let mut m: Box<JsonValueCollector> = {
-            let result  = Box::into_raw(ui.callback.value.take().unwrap());
-            unsafe{ Box::from_raw( result.cast()) }
-        };
-        
-        Ok(m.value.take().unwrap().into())
+
+        // Recover the concrete collector via trait upcasting (dyn CallbackHandler
+        // -> dyn Any, stable since Rust 1.86) and a checked downcast.
+        let mut m: Box<JsonValueCollector> = (ui.callback.value.take().unwrap() as Box<dyn Any>)
+            .downcast()
+            .expect("collector should be the JsonValueCollector set above");
+
+        Ok(m.value.take().unwrap_or_default().into())
     }
     
     fn run_map_output(&mut self, ui: &mut UserInterface, command: &str, args: Vec<String>) -> Result<HashMap<String, String>, Error> {
@@ -150,13 +150,13 @@ impl Client {
         
         api.as_mut().set_argv(args);
         api.as_mut().run(ui.internal.pin_mut(), command);
-        
-        assert!(rustversion::cfg!(before(1.86)), "use std::any::Any with trait_upcasting");
-        let m: Box<MapValueCollector> = {
-            let result  = Box::into_raw(ui.callback.value.take().unwrap());
-            unsafe{ Box::from_raw( result.cast()) }
-        };
-        
+
+        // Recover the concrete collector via trait upcasting (dyn CallbackHandler
+        // -> dyn Any, stable since Rust 1.86) and a checked downcast.
+        let m: Box<MapValueCollector> = (ui.callback.value.take().unwrap() as Box<dyn Any>)
+            .downcast()
+            .expect("collector should be the MapValueCollector set above");
+
         // TODO: Check for errors and handle!
         Ok(m.value)
     }
