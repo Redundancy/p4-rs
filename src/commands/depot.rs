@@ -298,27 +298,13 @@ impl Client {
         DepotSpec::from_record(records.into_iter().next().unwrap_or_default())
     }
 
-    /// Save a depot spec (`p4 depot -i`), creating or updating it.
-    ///
-    /// The form text is produced by [`DepotSpec::to_spec_text`] and must reach
-    /// the server as the command's input. Delivering it requires the C++ bridge
-    /// to override `ClientUser::InputData`; the current bridge does not, and
-    /// the SDK's default `InputData` blocks reading the process's stdin --
-    /// verified against a live 2025.2 p4d, where `depot -i` hangs indefinitely.
-    /// Rather than hang (or race stdin), this returns an error immediately
-    /// without contacting the server. The error carries the rendered form under
-    /// the `spec` key so a caller can still submit it out-of-band (e.g. piping
-    /// to `p4 depot -i`). Once the bridge grows form-input support, replace the
-    /// error below with the run call.
+    /// Save a depot spec (`p4 depot -i`), creating or updating it, feeding the
+    /// form to the server through the bridge's input channel.
     pub fn save_depot_spec(&mut self, spec: &DepotSpec) -> Result<(), Error> {
-        let text = spec.to_spec_text();
-        Err(Error::SerializationError(
-            serde::de::Error::custom(
-                "save_depot_spec: the bridge has no ClientUser::InputData override, so \
-                 `depot -i` cannot be fed the spec form (the SDK default would block on stdin)",
-            ),
-            [("spec".to_string(), text)].into_iter().collect(),
-        ))
+        let mut ui = UserInterface::new();
+        ui.set_input(&spec.to_spec_text());
+        self.run_records(&mut ui, "depot", vec!["-i".to_string()])?;
+        Ok(())
     }
 }
 
