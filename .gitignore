@@ -6,8 +6,9 @@
 /perforce-server
 /temp
 
-# Conan-fetched deps and generated output (conanfile.py is kept; these are not)
+# Conan-fetched deps and generated output (conanfile.py / deploy_flat.py are kept)
 /bin
+/conan-build
 conanbuildinfo.txt
 conaninfo.txt
 graph_info.json
