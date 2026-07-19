@@ -1,18 +1,7 @@
-use serde::{Deserialize, Deserializer, Serialize};
+use crate::commands::helpers::optional_string;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
-
-/// Deserialize a field that is optional-by-absence: when the key is present its
-/// value is a plain string (wrap in Some); when absent, `#[serde(default)]`
-/// supplies None. Needed because MapDeserializer's string values don't support
-/// serde's native Option handling (a present value fails with
-/// "invalid type: string, expected option").
-fn optional_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(d).map(Some)
-}
 
 pub struct Options {
     short: bool,

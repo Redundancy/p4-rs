@@ -19,7 +19,8 @@ use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
 use p4_rs::client;
-use p4_rs::commands::info;
+use p4_rs::commands::client::ViewMapping;
+use p4_rs::commands::{info, users};
 
 /// A throwaway `p4d` server rooted in a temp directory, killed on drop.
 struct TestServer {
@@ -147,6 +148,90 @@ fn run_records_on_multi_record_command() {
         .run_records(&mut ui, "changes", Vec::new())
         .expect("changes against a live p4d");
     assert!(records.is_empty(), "fresh server should have no changes");
+}
+
+/// The create -> modify -> save -> re-read cycle for client specs, all typed.
+#[test]
+#[ignore = "requires P4D_BIN; run with `cargo test -- --ignored`"]
+fn clientspec_create_modify_reread() {
+    let Some(server) = TestServer::start("clientspec") else {
+        skip("clientspec_create_modify_reread");
+        return;
+    };
+
+    let mut c = server.connect();
+
+    // A spec for a client that doesn't exist yet is a defaulted template.
+    let mut spec = c.client_spec(Some("it-ws")).expect("read spec template");
+    assert_eq!(spec.client, "it-ws");
+    assert!(
+        spec.update.is_none(),
+        "unsaved template has no Update stamp"
+    );
+
+    // Modify: description, root, and an added view exclusion.
+    spec.description = "Integration test workspace.".to_string();
+    spec.root = server.root.join("ws").to_string_lossy().into_owned();
+    spec.view.push(ViewMapping::new(
+        "-//depot/excluded/...",
+        "//it-ws/excluded/...",
+    ));
+    spec.options.clobber = true;
+
+    c.save_client_spec(&spec).expect("save modified spec");
+
+    // Re-read: our modifications persisted and the server stamped it.
+    let saved = c.client_spec(Some("it-ws")).expect("re-read saved spec");
+    assert_eq!(saved.description.trim_end(), "Integration test workspace.");
+    assert!(saved.options.clobber);
+    assert!(saved.update.is_some(), "saved spec has an Update stamp");
+    assert_eq!(saved.view.len(), 2);
+    assert_eq!(saved.view[1].depot, "-//depot/excluded/...");
+}
+
+/// users() lists accounts, typed -- after creating our own user record via
+/// `user -i` (which also exercises the InputData plumbing end to end).
+#[test]
+#[ignore = "requires P4D_BIN; run with `cargo test -- --ignored`"]
+fn users_lists_created_user() {
+    let Some(server) = TestServer::start("users") else {
+        skip("users_lists_created_user");
+        return;
+    };
+
+    let mut c = server.connect();
+
+    // Whoever we're connected as (OS-dependent) is who we can create. Note:
+    // info()'s userName is literally "*unknown*" until the user record exists
+    // (at least on 2022.2), so read the name from the user -o template, which
+    // reports the client-resolved name.
+    let mut ui = client::UserInterface::new();
+    let template = c
+        .run_records(&mut ui, "user", vec!["-o".to_string()])
+        .expect("user -o template");
+    let me = template
+        .first()
+        .and_then(|r| r.get("User"))
+        .expect("template User field")
+        .clone();
+
+    ui.set_input(&format!(
+        "User:\t{me}\n\nEmail:\t{me}@example.test\n\nFullName:\tIntegration Test\n"
+    ));
+    c.run_records(&mut ui, "user", vec!["-i".to_string()])
+        .expect("save own user spec");
+
+    let listed = c.users(&users::Options::new()).expect("list users");
+    let mine = listed
+        .iter()
+        .find(|u| u.user == me)
+        .expect("created user should be listed");
+    assert_eq!(mine.email, format!("{me}@example.test"));
+    assert_eq!(mine.full_name, "Integration Test");
+    assert!(
+        mine.update > 0,
+        "tagged Update should be an epoch timestamp"
+    );
 }
 
 #[test]

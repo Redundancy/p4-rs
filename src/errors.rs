@@ -12,6 +12,10 @@ pub enum Error {
 
     #[error("Oops it blew up")]
     SerializationError(serde::de::value::Error, HashMap<String, String>),
+
+    /// A spec field (e.g. a client view mapping) could not be parsed or built.
+    #[error("invalid spec data: {0}")]
+    SpecError(String),
 }
 
 /// This is a user-facing error type for low level usage

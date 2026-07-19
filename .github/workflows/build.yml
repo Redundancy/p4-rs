@@ -17,7 +17,9 @@ name: build
 
 on:
   push:
-    branches: [main]
+    # `typed-commands` is here temporarily to validate on the branch;
+    # remove it before merge (the PR trigger covers review).
+    branches: [main, typed-commands]
   pull_request:
     branches: [main]
   workflow_dispatch:

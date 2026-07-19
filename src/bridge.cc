@@ -168,6 +168,23 @@ void P4ClientUser::HandleError( Error* err ) {
     this->errors.Merge(*err);
 }
 
+void P4ClientUser::set_input(rust::Str input) {
+    this->input.assign(input.data(), input.size());
+    this->has_input = true;
+}
+
+// Called by the server when a command reads input (e.g. `client -i` reads the
+// spec form). Delivers whatever set_input stored, once; with nothing pending we
+// leave the buffer empty, which the server reports as an empty-input error.
+void P4ClientUser::InputData( StrBuf* strbuf, Error* e ) {
+    (void)e;
+    if (strbuf == nullptr || !this->has_input) {
+        return;
+    }
+    strbuf->Set(this->input.c_str(), static_cast<int>(this->input.size()));
+    this->has_input = false;
+}
+
 // Tagged-protocol output: one call per record, as a StrDict of key/values.
 // Forward each record to the Rust proxy as a vector of pairs.
 void P4ClientUser::OutputStat( StrDict* varList ) {

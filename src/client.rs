@@ -48,6 +48,12 @@ impl UserInterface {
             callback: x,
         }
     }
+
+    /// Provide the data the next command will read as input -- e.g. the spec
+    /// form for `client -i` / `user -i`. Consumed by the first input request.
+    pub fn set_input(&mut self, input: &str) {
+        self.internal.pin_mut().set_input(input);
+    }
 }
 
 impl Default for Options {
@@ -215,6 +221,54 @@ impl Client {
             .downcast()
             .expect("collector should be the RecordsCollector set above");
         Ok(m.records)
+    }
+
+    /// List the server's users (`p4 users`), typed.
+    pub fn users(
+        &mut self,
+        options: &commands::users::Options,
+    ) -> Result<Vec<commands::users::User>, Error> {
+        let mut ui = UserInterface::new();
+        let records = self.run_records(&mut ui, "users", options.get_args())?;
+        records
+            .into_iter()
+            .map(|m| {
+                commands::users::User::deserialize(serde::de::value::MapDeserializer::new(
+                    m.clone().into_iter(),
+                ))
+                .map_err(|e| Error::SerializationError(e, m))
+            })
+            .collect()
+    }
+
+    /// Read a client workspace spec (`p4 client -o [name]`), typed. With
+    /// `None`, the connection's current client (P4CLIENT) is used. For a
+    /// client that doesn't exist yet, the server returns a defaulted template
+    /// -- the create flow is: read the template, modify it, save it.
+    pub fn client_spec(
+        &mut self,
+        name: Option<&str>,
+    ) -> Result<commands::client::ClientSpec, Error> {
+        let mut ui = UserInterface::new();
+        let mut args = vec!["-o".to_string()];
+        if let Some(name) = name {
+            args.push(name.to_string());
+        }
+        let mut records = self.run_records(&mut ui, "client", args)?;
+        let record = if records.is_empty() {
+            HashMap::new()
+        } else {
+            records.swap_remove(0)
+        };
+        commands::client::ClientSpec::from_record(record)
+    }
+
+    /// Create or update a client workspace spec (`p4 client -i`).
+    pub fn save_client_spec(&mut self, spec: &commands::client::ClientSpec) -> Result<(), Error> {
+        let mut ui = UserInterface::new();
+        ui.set_input(&spec.to_spec_text());
+        self.run_records(&mut ui, "client", vec!["-i".to_string()])?;
+        Ok(())
     }
 
     pub fn info(
@@ -385,6 +439,7 @@ pub mod ffi {
         /// UserInterface wrapper guarantees this by owning both, with the proxy
         /// boxed at a stable address.
         unsafe fn new_client_user(cb: *mut UICallbackProxy) -> UniquePtr<P4ClientUser>;
+        fn set_input(self: Pin<&mut P4ClientUser>, input: &str);
 
     }
 }
