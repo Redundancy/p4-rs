@@ -214,3 +214,31 @@ pub fn create_pending_change(c: &mut Client, desc: &str) -> String {
         .expect("new change number")
         .clone()
 }
+
+/// Create a client rooted at a real on-disk directory and return the connected
+/// client plus that workspace root -- the starting point for any file-operation
+/// test (add/edit/submit/sync...).
+pub fn create_workspace(server: &TestServer, client_name: &str) -> (Client, PathBuf) {
+    let work = server.root.join(format!("ws-{client_name}"));
+    std::fs::create_dir_all(&work).expect("create workspace dir");
+    let mut c = server.connect_with_client(client_name);
+    create_client(&mut c, client_name, &work);
+    (c, work)
+}
+
+/// Write `content` to `rel` within the workspace, `p4 add` it, and submit it,
+/// so later tests have a file in the depot to sync/edit/describe. Returns the
+/// file's depot path (`//depot/<rel>`).
+pub fn add_and_submit(c: &mut Client, work: &Path, rel: &str, content: &str, desc: &str) -> String {
+    let path = work.join(rel);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("create parent dir");
+    }
+    std::fs::write(&path, content).expect("write workspace file");
+
+    let local = path.to_string_lossy();
+    c.add(&[local.as_ref()]).expect("add file");
+    c.submit(desc).expect("submit file");
+
+    format!("//depot/{}", rel.replace('\\', "/"))
+}

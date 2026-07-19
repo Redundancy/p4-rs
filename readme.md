@@ -22,80 +22,69 @@ As an individual, there's no reasonable way that I can see and test every possib
 
 # Current State
 
-Of the above, `(2)` has significant progress - you can login and call `run()` with basic command arguments on a simple local server. 
-A lot of modes of the responses from P4 are not implemented yet in the UI object (eg. writing files, line based Map responses).
-`(1)` has a single (!) vertical slice - `info` is implemented as illustrated below:
+Both of the layering goals above now work against a live server.
+
+**`(2)` the non-typesafe layer** — `Client::run_records(&mut ui, "<cmd>", args)` runs any
+command in the server's *tagged* protocol and hands back the raw records as
+`Vec<HashMap<String, String>>`. That's the escape hatch for anything without a typed wrapper
+yet, and `UserInterface::set_input` lets you feed a spec form to `-i` commands.
+
+**`(1)` the typesafe layer** — a growing set of commands return real Rust types built on top
+of that. Spec commands round-trip: read with `-o` into a typed struct, mutate it, and save it
+back with `-i`.
+
+Implemented so far:
+
+- **Server / admin:** `info`, `users` / `user`, `clients` / `client`, `depots` / `depot`,
+  `groups` / `group`, `labels` / `label`, `branches` / `branch`, `counters`
+- **Changelists:** `changes`, `change`, `describe`, `submit`
+- **Files:** `add`, `edit`, `delete`, `revert`, `sync`, `opened`, `fstat`, `where`, `have`
+
+The typed edit workflow, for example:
 
 ```rust
-use commands::info::Options;
 let mut c = client::Options::new()
-  .set_program("foo.rs")
-  .set_port("localhost:1666")
-  .connect()?;
+    .set_port("localhost:1666")
+    .set_client("my-ws")
+    .connect()?;
 
-let info_opts = Options::new().shortened();
-let r = c.info(&info_opts)?;
-println!("Result: {:?}", r);
-println!("User name: {}", r.user_name);
-```
+c.add(&["/work/hello.txt"])?;                    // -> Vec<FileAction>
+let submitted = c.submit("add hello")?;          // -> SubmitResult { change, files }
+println!("submitted as change {}", submitted.change);
 
-Using the builder pattern for options makes a lot of sense to me in terms of being both type safe, literate, and providing
-great visibility into what is possible within Rust using code completion etc.
-
-Result:
-```
-Result: Info { 
-    case_handling: Insensitive, 
-    client_address: "127.0.0.1", 
-    client_host: "DESKTOP-123456", 
-    client_name: "DESKTOP-123456", 
-    client_root: None, 
-    current_dir: "d:\\projects\\p4", 
-    server_address: "localhost:1666", 
-    server_root: "C:/temp/p4", 
-    server_date: "2025/03/05 07:39:25 -0500 Eastern Standard Time", 
-    server_version: "P4D/NTX64/2022.2/2369846 (2022/11/14)", 
-    server_uptime: "00:00:03", 
-    user_name: "Redundancy" 
+for f in c.opened(&opened::Options::new())? {    // -> Vec<OpenedFile>, fully typed
+    println!("{} open for {}", f.depot_file, f.action);
 }
-User name: Redundancy
 ```
-Not all the fields are parsed to native Rust types yet (eg.  date, uptime, client IP).  
-Errors exist and can be raised from C++, but are not converted into particularly ergonomic error enums (or types).
 
+Using the builder pattern for options makes a lot of sense to me in terms of being both type
+safe, literate, and providing great visibility into what is possible within Rust using code
+completion etc.
 
-There is however, some probably not very great C++ that I'd love to go back to, in order to make some const-ness work:
-```C++
-char** c_arg = new char*[args.size()];
+Two disciplines keep the types honest: every struct is shaped from records **captured against
+a real p4d** (the server's tagged output has genuine quirks — lowercase-vs-capitalised keys,
+epoch-vs-formatted dates, `//client/...`-vs-local paths — that guessing gets wrong), and every
+command has **integration tests that spin up a throwaway `p4d`** and exercise it end to end.
 
-for (size_t i = 0; i < args.size(); ++i) {
-    auto s = args[i].size() + 1;
-    c_arg[i] = new char[s];
-    strcpy_s(c_arg[i], s, args[i].c_str());
-}
-
-// char *const *
-this->api.SetArgv(args.size(), c_arg);
-
-for (size_t i = 0; i < args.size(); ++i) {
-    delete[] c_arg[i];
-}
-delete[] c_arg;
-```
-erk. There's probably a better way. PRs from people with a more active working knowledge of C++ appreciated.
-
-However, what this illustrates is the basics of the plumbing are viable.
+Where a value is a stable set it becomes an `enum` with a strict parse; where the set grows
+across server versions it gets an `Other(String)` fallback so a listing never fails on an
+unfamiliar value; server-managed fields (Update/Access stamps) are read-only and never sent
+back on save.
 
 # Desired State
 ## Error Handling
 
-I expect two basic error types, with an extended set of specific ones:
+The two basic error types now exist on `errors::Error`:
 
-Firstly, some sort of serde-like "I couldn't build the type I was expecting from the response I got" error.  
-Second, a "here's an uncategorized error from P4 that I don't know how to interpret"
+* `SerializationError` — the serde-style "I couldn't build the type I expected from the
+  response I got". It carries the raw record map alongside the serde error, so when a struct
+  fails to deserialize you can see exactly what the server actually sent.
+* `RawError` — a `P4InternalError` wrapping an uncategorised error straight from P4 (severity,
+  subsystem, and the individual error ids are decoded).
 
-After that, I'd expect to pull error types out of the second bucket, and into their own enumeration values to make the handling in
-Rust more ergonomic and compatible with a switch. 
+There's also `SpecError` for spec text that can't be parsed or built. Still aspirational: pulling
+specific P4 errors out of the raw bucket into their own enumeration values, so callers can
+`match` on "file already open", "needs resolve", etc. rather than inspecting the raw ids.
 
 ## Adding Commands
 Once the basics of the handling and parsing are done for the various ways that the P4 Server responds to the client, I expect it to be easy to add new commands and update the types/contents/expected responses of existing ones.
@@ -156,9 +145,27 @@ the implementation of `message` on that. We use a concrete Rust type, because I'
 So now we're handling the callbacks in `UICallbackProxy`, and we dispatch them to a `Box<dyn CallbackHandler>` which is a 
 trait that anyone can implement using only Rust - this being the major objective of the whole daisy chain.
 
+Since then the daisy chain has grown two more strands, which are what make the typed commands
+possible. The `ClientApi` is put into **tagged** mode, so structured results arrive via
+`ClientUser::OutputStat` as key/value dicts rather than pre-formatted text — `CallbackHandler`
+gains an `output_stat` for these, and a `RecordsCollector` turns them into the
+`Vec<HashMap<String, String>>` that `run_records` returns (and that serde then deserializes into
+typed structs). And `ClientUser::InputData` is wired up so a spec form can be fed to `-i`
+commands via `UserInterface::set_input` — that's how the `save_*` half of every spec round-trip
+works.
+
 # Building
-I'd like to get this set up to auto-build using Github actions.  (https://github.com/perforce/p4python may provide inspiration)  
-A whole test-suite by configuring an actual p4 server on the fly would be fantastic.
+
+This now auto-builds on GitHub Actions (`.github/workflows/build.yml`), on **Windows (MSVC)**
+and **Linux (glibc)**, taking cues from [p4python](https://github.com/perforce/p4python): the P4
+API and a `p4d` server are downloaded from Perforce filehost at build time (cached, never
+committed), OpenSSL/zlib come from Conan, and — the "test-suite by configuring an actual p4
+server on the fly" wish — the integration tests spin up that downloaded `p4d` and run the typed
+commands against it. `fmt` and `clippy -D warnings` are blocking.
+
+To build locally you need the three dependencies below on disk (the SDK, and OpenSSL + zlib via
+Conan). The server-backed tests are `#[ignore]`d unless `P4D_BIN` points at a `p4d`, so a plain
+`cargo test` stays green without one.
 
 ## Obtaining dependencies
 ### P4 API
@@ -170,18 +177,30 @@ directory such as `p4api-2025.2.2907753-vs2022_static`), so you can point it whe
 API is unpacked rather than relying on a fixed path.
 
 ### OpenSSL
-The version of the p4 OpenSSL dependency is determined (on windows) by: `strings librpc.lib | findstr /B OpenSSL`
+The P4 API is built against one specific OpenSSL, and linking a different one is an ABI
+landmine. That version is embedded as a banner in the SDK's `librpc` lib, so `conanfile.py`
+and `build.rs` both read it out and stay in lockstep — nothing about OpenSSL is hardcoded.
+Check it yourself with `strings p4api-*/lib/librpc.lib | findstr /B OpenSSL` (Windows).
 
-This uses Conan to get the OpenSSL dependencies from a pre-built source.  
-`conan install . -g deploy` from within the p4 folder should get OpenSSL and zlib.
-This is *significantly* easier than building OpenSSL from scratch yourself and needing to try and install all sorts of dependencies.
+This uses **Conan 2** to fetch pre-built OpenSSL + zlib (much easier than building OpenSSL
+yourself). A small custom deployer reproduces the flat `openssl/` + `zlib/` layout `build.rs`
+expects:
+
+```
+conan install . --deployer=deploy_flat --deployer-folder=. --build=missing
+```
+
+Pinning the Conan profile's `compiler.version` to a config ConanCenter prebuilds (the CI does
+this) keeps it a *download*, not a from-source build — so no perl/nasm needed.
 
 ### Perforce Server
-A working Perforce server is needed for testing. You'll either need an existing one, or to use an individual license from perforce
-and download one. At the time of writing, Perforce supports free individual p4 server licenses up to 5 users.
+A working Perforce server is needed for the integration tests. You'll either need an existing
+one, or an individual license from Perforce (free for up to 5 users). CI downloads `p4d` from
+filehost automatically; locally, point `P4D_BIN` at a `p4d` binary.
 
 ## Linux Support
-Not implemented. Probably easy-ish.
+Implemented and exercised by CI (`ubuntu-latest`, the glibc SDK build). macOS is not wired up
+yet.
 
 
 
