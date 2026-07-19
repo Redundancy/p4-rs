@@ -141,6 +141,43 @@ impl TryFrom<i32> for Subsystem {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_error_id_unpacks_bit_fields() {
+        // Same packing as ErrorOf() in the p4 SDK's error.h:
+        // (sev<<28)|(arg<<24)|(gen<<16)|(sub<<10)|cod
+        // Field widths: sev 4, arg 4, gen 8, sub 6, cod 10 bits.
+        let (sev, arg, gen, sub, cod) = (3, 1, 38, 12, 500);
+        let id = (sev << 28) | (arg << 24) | (gen << 16) | (sub << 10) | cod;
+
+        let e = expand_error_id(ffi::ErrID {
+            id,
+            fmt: "TCP connect to %host% failed.".to_string(),
+        });
+        assert_eq!(e.severity, sev);
+        assert_eq!(e.arg_count, arg);
+        assert_eq!(e.generic, gen);
+        assert_eq!(e.subsystem, Subsystem::FtpServer); // 12
+        assert_eq!(e.sub_code, cod);
+        // unique_code is the low 16 bits (subsystem + subcode), matching the
+        // "code NNNN" p4 prints in error output.
+        assert_eq!(e.unique_code, (sub << 10) | cod);
+        assert_eq!(e.format_string, "TCP connect to %host% failed.");
+    }
+
+    #[test]
+    fn subsystem_maps_known_values_and_rejects_unknown() {
+        assert_eq!(Subsystem::try_from(0), Ok(Subsystem::OS));
+        assert_eq!(Subsystem::try_from(8), Ok(Subsystem::Client));
+        assert_eq!(Subsystem::try_from(19), Ok(Subsystem::DataManagerOverflow));
+        assert!(Subsystem::try_from(20).is_err());
+        assert!(Subsystem::try_from(-1).is_err());
+    }
+}
+
 #[cxx::bridge]
 pub mod ffi {
     // Any shared structs, whose fields will be visible to both languages.

@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::collections::HashMap;
 use cxx::UniquePtr;
-use log::{info, warn};
+use log::warn;
 use serde::Deserialize;
 use crate::commands;
 use crate::errors::{Error, P4InternalError};
@@ -70,12 +70,13 @@ impl Options {
         let mut connection = ffi::new_client_api();
         (&mut self).pre_init_settings(&mut connection);
 
-        let err = connection.as_mut().unwrap().init(); // watch out for drop without finalizer
-        let client = Client::new(connection);
+        let err = connection.as_mut().unwrap().init();
         if err.is_error() {
+            // Init failed: drop the raw connection without constructing a Client,
+            // whose Drop would call Final() -- only valid after a successful Init.
             return Err(P4InternalError::new(err));
         }
-        Ok(client)
+        Ok(Client::new(connection))
     }
 
     /// Settings that must be applied after ClientApi creation
@@ -207,6 +208,44 @@ impl UICallbackProxy {
         } else {
             warn!("UICallbackProxy called without handler set");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Exercises the same upcast + downcast mechanism run() uses to recover the
+    /// concrete collector from Box<dyn CallbackHandler>. (The previous
+    /// implementation panicked here on rustc >= 1.86.)
+    #[test]
+    fn map_collector_roundtrip_via_any_downcast() {
+        let mut b: Box<dyn CallbackHandler> = Box::new(MapValueCollector {
+            value: HashMap::new(),
+        });
+        b.message("userName: alice");
+        b.message("serverAddress: localhost:1666");
+        b.message("a line without a separator is ignored");
+
+        let m: Box<MapValueCollector> = (b as Box<dyn Any>).downcast().expect("downcast");
+        assert_eq!(m.value.get("userName").map(String::as_str), Some("alice"));
+        // split_once keeps everything after the first ':', so values containing
+        // colons survive intact.
+        assert_eq!(
+            m.value.get("serverAddress").map(String::as_str),
+            Some("localhost:1666")
+        );
+        assert_eq!(m.value.len(), 2);
+    }
+
+    #[test]
+    fn json_collector_builds_object() {
+        let mut b: Box<dyn CallbackHandler> = Box::new(JsonValueCollector { value: None });
+        b.message("clientName: my-workspace");
+
+        let mut j: Box<JsonValueCollector> = (b as Box<dyn Any>).downcast().expect("downcast");
+        let v: serde_json::Value = j.value.take().unwrap().into();
+        assert_eq!(v["clientName"], "my-workspace");
     }
 }
 
