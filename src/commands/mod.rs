@@ -5,6 +5,7 @@ pub mod client;
 pub mod clients;
 pub mod counters;
 pub mod describe;
+pub mod group;
 mod helpers;
 pub mod info;
 pub mod users;
