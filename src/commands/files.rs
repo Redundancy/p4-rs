@@ -30,6 +30,45 @@ where
     s.parse::<u64>().map(Some).map_err(serde::de::Error::custom)
 }
 
+/// A changelist reference as the server reports it on an open file: either the
+/// default changelist or a numbered one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChangelistId {
+    Default,
+    Number(u64),
+}
+
+impl ChangelistId {
+    /// The numeric changelist, or `None` for the default changelist.
+    pub fn number(&self) -> Option<u64> {
+        match self {
+            ChangelistId::Default => None,
+            ChangelistId::Number(n) => Some(*n),
+        }
+    }
+}
+
+impl FromStr for ChangelistId {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "default" {
+            return Ok(ChangelistId::Default);
+        }
+        s.parse::<u64>()
+            .map(ChangelistId::Number)
+            .map_err(|_| format!("not a changelist id: {s:?}"))
+    }
+}
+
+impl Display for ChangelistId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            ChangelistId::Default => f.write_str("default"),
+            ChangelistId::Number(n) => write!(f, "{n}"),
+        }
+    }
+}
+
 /// The `action` recorded when a file is opened. Open-ended (`Other`) so a new
 /// server action never makes a whole listing fail to parse.
 #[derive(Debug, Clone, PartialEq, Eq)]
