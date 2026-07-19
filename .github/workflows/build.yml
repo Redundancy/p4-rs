@@ -20,7 +20,9 @@ name: build
 
 on:
   push:
-    branches: [main]
+    # `code-improvements` is here temporarily to validate on the branch;
+    # remove it before merge (the PR trigger covers review).
+    branches: [main, code-improvements]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -65,6 +67,7 @@ jobs:
         with:
           path: |
             p4api
+            p4d.exe
             openssl
             zlib
             ~/.conan2
@@ -81,11 +84,21 @@ jobs:
           $inner = Get-ChildItem -Directory p4api-extracted | Select-Object -First 1
           Move-Item $inner.FullName p4api
 
+      - name: Download p4d (for integration tests)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = "$env:FILEHOST/$env:P4_RELEASE/$env:P4_PLATFORM/p4d.exe"
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile p4d.exe
+
       # Set P4API_PATH before Conan so conanfile.py reads the OpenSSL version from
       # this exact SDK (deterministic) instead of scanning for a p4api* directory.
-      - name: Expose SDK path
+      - name: Expose dependency paths
         shell: pwsh
-        run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
+        run: |
+          "P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "P4D_BIN=$(Resolve-Path p4d.exe)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       # Conan 2 auto-detects msvc + runtime=dynamic on the runner. We pin
       # compiler.version=194 (VS2022) because center2 publishes a prebuilt OpenSSL
@@ -112,6 +125,9 @@ jobs:
 
       - name: Tests
         run: cargo test --release
+
+      - name: Integration tests (against downloaded p4d)
+        run: cargo test --release -- --ignored --nocapture
 
       - name: Stage artifact with license
         shell: pwsh
@@ -158,6 +174,7 @@ jobs:
         with:
           path: |
             p4api
+            p4d
             openssl
             zlib
             ~/.conan2
@@ -173,10 +190,20 @@ jobs:
           tar -xzf p4api.tgz -C p4api-extracted
           mv "$(find p4api-extracted -maxdepth 1 -mindepth 1 -type d | head -n1)" p4api
 
+      - name: Download p4d (for integration tests)
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        run: |
+          url="$FILEHOST/$P4_RELEASE/$P4_PLATFORM/p4d"
+          echo "Downloading $url"
+          curl -fSL "$url" -o p4d
+          chmod +x p4d
+
       # Set P4API_PATH before Conan so conanfile.py reads the OpenSSL version from
       # this exact SDK (deterministic) instead of scanning for a p4api* directory.
-      - name: Expose SDK path
-        run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
+      - name: Expose dependency paths
+        run: |
+          echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
+          echo "P4D_BIN=$(pwd)/p4d" >> "$GITHUB_ENV"
 
       # Conan 2 auto-detects gcc + libstdc++11. We pin compiler.version=13 because
       # center2 publishes a prebuilt OpenSSL for that config -- so OpenSSL is
@@ -202,6 +229,9 @@ jobs:
 
       - name: Tests
         run: cargo test --release
+
+      - name: Integration tests (against downloaded p4d)
+        run: cargo test --release -- --ignored --nocapture
 
       - name: Stage artifact with license
         run: |
