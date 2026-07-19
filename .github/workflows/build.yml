@@ -17,9 +17,7 @@ name: build
 
 on:
   push:
-    # `code-improvements` is here temporarily to validate on the branch;
-    # remove it before merge (the PR trigger covers review).
-    branches: [main, code-improvements]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
