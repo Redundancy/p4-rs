@@ -1,16 +1,15 @@
+use miette::Diagnostic;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
-use miette::Diagnostic;
 use thiserror::Error;
-
 
 #[derive(Error, Diagnostic, Debug)]
 #[diagnostic(help("try doing this instead"))]
 pub enum Error {
     #[error("Oops it blew up")]
     RawError(#[from] P4InternalError),
-    
+
     #[error("Oops it blew up")]
     SerializationError(serde::de::value::Error, HashMap<String, String>),
 }
@@ -35,7 +34,6 @@ pub enum Severity {
     Fatal,  // system broken -- nothing can continue
 }
 
-
 #[derive(Debug)]
 pub struct ErrorID {
     pub sub_code: i32,
@@ -52,7 +50,7 @@ impl Error {}
 fn expand_error_id(e: ffi::ErrID) -> ErrorID {
     let code = e.id;
     ErrorID {
-        sub_code: (code >> 0) & 0x3ff,
+        sub_code: code & 0x3ff,
         subsystem: Subsystem::try_from(code >> 10 & 0x3f).expect("invalid subsystem"),
         generic: (code >> 16) & 0xff,
         arg_count: (code >> 24) & 0x0f,
@@ -73,7 +71,7 @@ impl Debug for P4InternalError {
                 "P4 Failed... of {:?} errors",
                 errors
                     .drain(..)
-                    .map(|e| expand_error_id(e))
+                    .map(expand_error_id)
                     .collect::<Vec<ErrorID>>()
             )),
             4 => f.write_fmt(format_args!("P4 Fatal Error... of {count} errors")),
@@ -141,6 +139,44 @@ impl TryFrom<i32> for Subsystem {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expand_error_id_unpacks_bit_fields() {
+        // Same packing as ErrorOf() in the p4 SDK's error.h:
+        // (sev<<28)|(arg<<24)|(gen<<16)|(sub<<10)|cod
+        // Field widths: sev 4, arg 4, gen 8, sub 6, cod 10 bits.
+        // (`gen` is a reserved keyword in edition 2024, hence `generic`.)
+        let (sev, arg, generic, sub, cod) = (3, 1, 38, 12, 500);
+        let id = (sev << 28) | (arg << 24) | (generic << 16) | (sub << 10) | cod;
+
+        let e = expand_error_id(ffi::ErrID {
+            id,
+            fmt: "TCP connect to %host% failed.".to_string(),
+        });
+        assert_eq!(e.severity, sev);
+        assert_eq!(e.arg_count, arg);
+        assert_eq!(e.generic, generic);
+        assert_eq!(e.subsystem, Subsystem::FtpServer); // 12
+        assert_eq!(e.sub_code, cod);
+        // unique_code is the low 16 bits (subsystem + subcode), matching the
+        // "code NNNN" p4 prints in error output.
+        assert_eq!(e.unique_code, (sub << 10) | cod);
+        assert_eq!(e.format_string, "TCP connect to %host% failed.");
+    }
+
+    #[test]
+    fn subsystem_maps_known_values_and_rejects_unknown() {
+        assert_eq!(Subsystem::try_from(0), Ok(Subsystem::OS));
+        assert_eq!(Subsystem::try_from(8), Ok(Subsystem::Client));
+        assert_eq!(Subsystem::try_from(19), Ok(Subsystem::DataManagerOverflow));
+        assert!(Subsystem::try_from(20).is_err());
+        assert!(Subsystem::try_from(-1).is_err());
+    }
+}
+
 #[cxx::bridge]
 pub mod ffi {
     // Any shared structs, whose fields will be visible to both languages.
@@ -150,8 +186,7 @@ pub mod ffi {
         fmt: String,
     }
 
-    extern "Rust" {
-    }
+    extern "Rust" {}
 
     unsafe extern "C++" {
         // One or more headers with the matching C++ declarations. Our code
@@ -159,13 +194,12 @@ pub mod ffi {
         // assertions to ensure our picture of the FFI boundary is accurate.
         include!("p4/include/bridge.h");
 
-
         pub type P4Error;
         fn is_error(self: &P4Error) -> bool;
         fn severity(self: &P4Error) -> i32;
         fn errors(self: &P4Error) -> Vec<ErrID>;
         fn get(self: Pin<&mut P4Error>, s: &str) -> String;
-        
+
         fn placeholder_error() -> UniquePtr<P4Error>;
     }
 }

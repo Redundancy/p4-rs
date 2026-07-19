@@ -24,6 +24,10 @@ rust::String P4ClientApi::get_version() {
 
 std::unique_ptr<P4Error> P4ClientApi::init() {
     auto e = std::make_unique<P4Error>();
+    // Tagged protocol: structured records arrive via ClientUser::OutputStat as
+    // key/value dicts instead of pre-formatted text lines. Must be set before
+    // Init. Commands without tagged support still report through Message.
+    this->api.SetProtocol("tag", "");
     this->api.Init(&e->error);
     return e;
 }
@@ -36,6 +40,16 @@ void P4ClientApi::set_program(rust::Str program) {
 void P4ClientApi::set_port(rust::Str port) {
     std::string p(port);
     this->api.SetPort(p.c_str());
+}
+
+void P4ClientApi::set_user(rust::Str user) {
+    std::string u(user);
+    this->api.SetUser(u.c_str());
+}
+
+void P4ClientApi::set_client(rust::Str client) {
+    std::string c(client);
+    this->api.SetClient(c.c_str());
 }
 
 std::unique_ptr<P4Error> P4ClientApi::finalizer() {
@@ -64,11 +78,14 @@ void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
     this->api.SetArgv(static_cast<int>(argv.size()), argv.data());
 }
 
-// TODO: void return, get errors from callbacks
 std::unique_ptr<P4Error> P4ClientApi::run(P4ClientUser& ui, rust::Str command) {
-    auto e = std::make_unique<P4Error>();
+    ui.errors.Clear();
     std::string command_str(command);
     this->api.Run(command_str.c_str(), (ClientUser*)&ui);
+
+    // Surface whatever the ClientUser callbacks accumulated during the run.
+    auto e = std::make_unique<P4Error>();
+    e->error = ui.errors;
     return e;
 }
 
@@ -126,6 +143,14 @@ void P4ClientUser::Message( Error* err ) {
     if (err == 0) {
         return;
     }
+
+    // Warnings and errors are results, not output: accumulate them for run()
+    // rather than feeding their text into the output collector.
+    if (!err->IsInfo()) {
+        this->errors.Merge(*err);
+        return;
+    }
+
     if (this->impl == nullptr) {
         return;
     }
@@ -134,4 +159,33 @@ void P4ClientUser::Message( Error* err ) {
     err->Fmt( buf, EF_PLAIN );
     auto s = std::string(buf.Text(), buf.Length());
     this->impl->message(rust::Str(s));
+}
+
+void P4ClientUser::HandleError( Error* err ) {
+    if (err == 0) {
+        return;
+    }
+    this->errors.Merge(*err);
+}
+
+// Tagged-protocol output: one call per record, as a StrDict of key/values.
+// Forward each record to the Rust proxy as a vector of pairs.
+void P4ClientUser::OutputStat( StrDict* varList ) {
+    if (varList == nullptr || this->impl == nullptr) {
+        return;
+    }
+
+    rust::Vec<KV> vars;
+    StrRef var, val;
+    for (int i = 0; varList->GetVar(i, var, val); i++) {
+        // Protocol bookkeeping, not user data.
+        if (var == "func") {
+            continue;
+        }
+        KV kv;
+        kv.key = rust::String(var.Text(), var.Length());
+        kv.value = rust::String(val.Text(), val.Length());
+        vars.push_back(std::move(kv));
+    }
+    this->impl->output_stat(std::move(vars));
 }

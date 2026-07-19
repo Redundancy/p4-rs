@@ -1,7 +1,7 @@
 [package]
 name = "p4-rs"
 version = "0.1.0"
-edition = "2018"
+edition = "2024"
 
 [dependencies]
 cxx = "1.0.136"
@@ -9,7 +9,6 @@ miette = { version = "5", features = ["fancy"] } # optional but gives nicer erro
 thiserror = "1.0.37"
 serde_json = "1.0.138"
 log = "0.4.25"
-rustversion = "1.0.19"
 serde = { version = "1.0.217", features = ["derive"] }
 
 [build-dependencies]
