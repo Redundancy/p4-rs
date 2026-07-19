@@ -64,11 +64,14 @@ void P4ClientApi::set_argv(rust::Vec<rust::String> args) {
     this->api.SetArgv(static_cast<int>(argv.size()), argv.data());
 }
 
-// TODO: void return, get errors from callbacks
 std::unique_ptr<P4Error> P4ClientApi::run(P4ClientUser& ui, rust::Str command) {
-    auto e = std::make_unique<P4Error>();
+    ui.errors.Clear();
     std::string command_str(command);
     this->api.Run(command_str.c_str(), (ClientUser*)&ui);
+
+    // Surface whatever the ClientUser callbacks accumulated during the run.
+    auto e = std::make_unique<P4Error>();
+    e->error = ui.errors;
     return e;
 }
 
@@ -126,6 +129,14 @@ void P4ClientUser::Message( Error* err ) {
     if (err == 0) {
         return;
     }
+
+    // Warnings and errors are results, not output: accumulate them for run()
+    // rather than feeding their text into the output collector.
+    if (!err->IsInfo()) {
+        this->errors.Merge(*err);
+        return;
+    }
+
     if (this->impl == nullptr) {
         return;
     }
@@ -134,4 +145,11 @@ void P4ClientUser::Message( Error* err ) {
     err->Fmt( buf, EF_PLAIN );
     auto s = std::string(buf.Text(), buf.Length());
     this->impl->message(rust::Str(s));
+}
+
+void P4ClientUser::HandleError( Error* err ) {
+    if (err == 0) {
+        return;
+    }
+    this->errors.Merge(*err);
 }

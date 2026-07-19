@@ -133,7 +133,10 @@ impl Client {
         ui.callback.value = Some(Box::new(JsonValueCollector{ value: None }));
         
         api.as_mut().set_argv(args);
-        api.as_mut().run(ui.internal.pin_mut(), command);
+        let err = api.as_mut().run(ui.internal.pin_mut(), command);
+        if err.is_error() {
+            return Err(P4InternalError::new(err).into());
+        }
 
         // Recover the concrete collector via trait upcasting (dyn CallbackHandler
         // -> dyn Any, stable since Rust 1.86) and a checked downcast.
@@ -149,7 +152,10 @@ impl Client {
         ui.callback.value = Some(Box::new(MapValueCollector{ value: HashMap::new() }));
         
         api.as_mut().set_argv(args);
-        api.as_mut().run(ui.internal.pin_mut(), command);
+        let err = api.as_mut().run(ui.internal.pin_mut(), command);
+        if err.is_error() {
+            return Err(P4InternalError::new(err).into());
+        }
 
         // Recover the concrete collector via trait upcasting (dyn CallbackHandler
         // -> dyn Any, stable since Rust 1.86) and a checked downcast.
@@ -157,7 +163,6 @@ impl Client {
             .downcast()
             .expect("collector should be the MapValueCollector set above");
 
-        // TODO: Check for errors and handle!
         Ok(m.value)
     }
     pub fn info(&mut self, options: &commands::info::Options) -> Result<commands::info::Info, Error> {

@@ -59,6 +59,12 @@ public:
 
     // C++ Callback functions from p4api::ClientUser
     virtual void Message( Error *err );
+    virtual void HandleError( Error *err );
+
+    // Warnings and errors reported during the most recent Run. Info-level
+    // messages go to the Rust callback; everything worse accumulates here so
+    // P4ClientApi::run can return it instead of dropping it.
+    Error errors;
 
     // Rust callback functions used
     // We're using a raw pointer because we never give this ownership
