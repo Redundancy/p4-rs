@@ -17,9 +17,7 @@ name: build
 
 on:
   push:
-    # `file-commands` is here temporarily to validate on the branch;
-    # remove it before merge (the PR trigger covers review).
-    branches: [main, file-commands]
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
