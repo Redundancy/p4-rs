@@ -1,9 +1,28 @@
 //! Typed `p4 users` -- list the users known to the server.
 
+use crate::client::{Client, UserInterface};
 use crate::commands::helpers::{from_str_value, opt_from_str};
+use crate::errors::Error;
 use serde::Deserialize;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+
+impl Client {
+    /// List the server's users (`p4 users`), typed.
+    pub fn users(&mut self, options: &Options) -> Result<Vec<User>, Error> {
+        let mut ui = UserInterface::new();
+        let records = self.run_records(&mut ui, "users", options.get_args())?;
+        records
+            .into_iter()
+            .map(|m| {
+                User::deserialize(serde::de::value::MapDeserializer::new(
+                    m.clone().into_iter(),
+                ))
+                .map_err(|e| Error::SerializationError(e, m))
+            })
+            .collect()
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct Options {

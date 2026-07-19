@@ -1,8 +1,6 @@
-use crate::commands;
 use crate::errors::{Error, P4InternalError};
 use cxx::UniquePtr;
 use log::{info, warn};
-use serde::Deserialize;
 use std::any::Any;
 use std::collections::HashMap;
 
@@ -223,72 +221,10 @@ impl Client {
         Ok(m.records)
     }
 
-    /// List the server's users (`p4 users`), typed.
-    pub fn users(
-        &mut self,
-        options: &commands::users::Options,
-    ) -> Result<Vec<commands::users::User>, Error> {
-        let mut ui = UserInterface::new();
-        let records = self.run_records(&mut ui, "users", options.get_args())?;
-        records
-            .into_iter()
-            .map(|m| {
-                commands::users::User::deserialize(serde::de::value::MapDeserializer::new(
-                    m.clone().into_iter(),
-                ))
-                .map_err(|e| Error::SerializationError(e, m))
-            })
-            .collect()
-    }
-
-    /// Read a client workspace spec (`p4 client -o [name]`), typed. With
-    /// `None`, the connection's current client (P4CLIENT) is used. For a
-    /// client that doesn't exist yet, the server returns a defaulted template
-    /// -- the create flow is: read the template, modify it, save it.
-    pub fn client_spec(
-        &mut self,
-        name: Option<&str>,
-    ) -> Result<commands::client::ClientSpec, Error> {
-        let mut ui = UserInterface::new();
-        let mut args = vec!["-o".to_string()];
-        if let Some(name) = name {
-            args.push(name.to_string());
-        }
-        let mut records = self.run_records(&mut ui, "client", args)?;
-        let record = if records.is_empty() {
-            HashMap::new()
-        } else {
-            records.swap_remove(0)
-        };
-        commands::client::ClientSpec::from_record(record)
-    }
-
-    /// Create or update a client workspace spec (`p4 client -i`).
-    pub fn save_client_spec(&mut self, spec: &commands::client::ClientSpec) -> Result<(), Error> {
-        let mut ui = UserInterface::new();
-        ui.set_input(&spec.to_spec_text());
-        self.run_records(&mut ui, "client", vec!["-i".to_string()])?;
-        Ok(())
-    }
-
-    pub fn info(
-        &mut self,
-        options: &commands::info::Options,
-    ) -> Result<commands::info::Info, Error> {
-        let mut ui = UserInterface::new();
-        let mut records = self.run_records(&mut ui, "info", options.get_args())?;
-        // info produces exactly one tagged record; deserializing an empty map
-        // (no output) reports the missing fields through SerializationError.
-        let m = if records.is_empty() {
-            HashMap::new()
-        } else {
-            records.swap_remove(0)
-        };
-        commands::info::Info::deserialize(serde::de::value::MapDeserializer::new(
-            m.clone().into_iter(),
-        ))
-        .map_err(|e| Error::SerializationError(e, m))
-    }
+    // Typed command entry points (info, users, client_spec, ...) live as
+    // inherent `impl Client` blocks inside their src/commands/<name>.rs
+    // modules, built strictly on the public run_records/set_input surface --
+    // adding a command never touches this file.
 }
 
 impl Drop for Client {

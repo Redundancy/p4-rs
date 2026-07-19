@@ -1,11 +1,41 @@
 //! Typed `p4 client` -- read (`-o`) and write (`-i`) client workspace specs.
 
+use crate::client::{Client, UserInterface};
 use crate::commands::helpers::{from_str_value, optional_string};
 use crate::errors::Error;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
+
+impl Client {
+    /// Read a client workspace spec (`p4 client -o [name]`), typed. With
+    /// `None`, the connection's current client (P4CLIENT) is used. For a
+    /// client that doesn't exist yet, the server returns a defaulted template
+    /// -- the create flow is: read the template, modify it, save it.
+    pub fn client_spec(&mut self, name: Option<&str>) -> Result<ClientSpec, Error> {
+        let mut ui = UserInterface::new();
+        let mut args = vec!["-o".to_string()];
+        if let Some(name) = name {
+            args.push(name.to_string());
+        }
+        let mut records = self.run_records(&mut ui, "client", args)?;
+        let record = if records.is_empty() {
+            HashMap::new()
+        } else {
+            records.swap_remove(0)
+        };
+        ClientSpec::from_record(record)
+    }
+
+    /// Create or update a client workspace spec (`p4 client -i`).
+    pub fn save_client_spec(&mut self, spec: &ClientSpec) -> Result<(), Error> {
+        let mut ui = UserInterface::new();
+        ui.set_input(&spec.to_spec_text());
+        self.run_records(&mut ui, "client", vec!["-i".to_string()])?;
+        Ok(())
+    }
+}
 
 /// One line of a client view: a depot path mapped to a client path. The depot
 /// side keeps any mapping prefix (`-` exclude, `+` overlay, `&` ditto).
