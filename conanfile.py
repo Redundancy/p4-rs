@@ -1,7 +1,7 @@
 import os
 import re
 
-from conans import ConanFile
+from conan import ConanFile
 
 # Directory containing this recipe (the project root).
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -16,13 +16,15 @@ class P4RsConan(ConanFile):
     actually built with -- embedded as a banner string in lib/librpc -- and
     require exactly that. build.rs reads the same banner to pick the matching
     link-library names, so the Conan pin and the linker stay in lockstep.
+
+    The flat `openssl/` + `zlib/` layout build.rs expects is produced by the
+    deploy_flat.py deployer (Conan 2 dropped the Conan 1 `deploy` generator).
     """
 
     settings = "os", "compiler", "build_type", "arch"
-    generators = "deploy"
 
     # Used only if the SDK can't be scanned (e.g. the lib isn't present yet).
-    default_openssl_version = "1.0.2t"
+    default_openssl_version = "3.0.15"
 
     def _p4api_dir(self):
         env = os.environ.get("P4API_PATH")
@@ -53,7 +55,7 @@ class P4RsConan(ConanFile):
             return None
         with open(librpc, "rb") as fh:
             blob = fh.read()
-        # e.g. b"OpenSSL 1.0.2t  10 Sep 2019" -> "1.0.2t"
+        # e.g. b"OpenSSL 3.0.19 ..." -> "3.0.19"
         match = re.search(rb"OpenSSL (\d+\.\d+\.\d+[a-z]?)", blob)
         return match.group(1).decode("ascii") if match else None
 
@@ -64,15 +66,13 @@ class P4RsConan(ConanFile):
             self.output.info("p4-rs: matching OpenSSL to the SDK -> openssl/%s" % version)
         else:
             version = self.default_openssl_version
-            self.output.warn(
+            self.output.warning(
                 "p4-rs: could not detect the SDK's OpenSSL version; falling back to "
                 "openssl/%s. Set OPENSSL_VERSION to override." % version
             )
         self.requires("openssl/%s" % version)
 
-        # OpenSSL pulls in zlib transitively. The old pinned zlib (1.2.12) can no
-        # longer be built from source in CI -- its upstream tarball is gone from
-        # zlib.net (HTTP 415 on the fossil), and no prebuilt matches the runner's
-        # modern toolchain. Override to a current zlib whose source and binaries
-        # still resolve; zlib keeps its ABI stable across these versions.
+        # Pin zlib (pulled transitively by openssl) to a current version. Older
+        # zlib recipes' source tarballs have rotted out of upstream mirrors; this
+        # keeps a known-good one. zlib is ABI-stable across these versions.
         self.requires("zlib/1.3.1", override=True)

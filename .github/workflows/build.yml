@@ -6,11 +6,14 @@ name: build
 # downloads its own SDK, and conanfile.py + build.rs read the OpenSSL version out
 # of that SDK, so nothing about OpenSSL is hardcoded.
 #
+# OpenSSL/zlib come from Conan 2 (center2 remote); the deploy_flat.py deployer
+# reproduces the flat openssl/ + zlib/ layout build.rs expects.
+#
 # NOTE (first-run tuning): the SDK download coordinates can't be validated offline.
 # The P4_RELEASE / *_ZIP / *_TGZ names must be real filehost paths for that release
-# -- browse https://filehost.perforce.com/perforce/ to confirm. If ConanCenter
-# lacks the exact OpenSSL patch letter the SDK reports, set OPENSSL_VERSION (per job)
-# to the nearest one in the same series to override the detection.
+# -- browse https://filehost.perforce.com/perforce/ to confirm. If center2 lacks the
+# exact OpenSSL version the SDK reports, set OPENSSL_VERSION (per job) to the nearest
+# one in the same series to override the detection.
 #
 # fmt/clippy run as advisory (continue-on-error) so they surface issues without
 # failing the build; flip them to blocking once the tree is clean.
@@ -26,7 +29,7 @@ permissions:
   contents: read
 
 env:
-  P4_RELEASE: r21.1
+  P4_RELEASE: r25.2
   FILEHOST: https://cdist2.perforce.com/perforce
 
 jobs:
@@ -34,8 +37,11 @@ jobs:
     runs-on: windows-latest
     env:
       P4_PLATFORM: bin.ntx64
-      P4API_ZIP: p4api_vs2017_static.zip
-      # OPENSSL_VERSION: "1.0.2u"   # uncomment only to override the SDK-detected version
+      P4API_ZIP: p4api_vs2022_static_openssl3.zip
+      # OpenSSL is auto-detected from the SDK (reports 3.0.19) and resolved from
+      # Conan 2's center2 remote. Uncomment to override if that exact patch is
+      # ever missing from the remote:
+      # OPENSSL_VERSION: "3.0.16"
     steps:
       - uses: actions/checkout@v4
 
@@ -50,8 +56,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Conan 1.x
-        run: pip install "conan<2"
+      - name: Install Conan 2
+        run: pip install "conan>=2"
 
       - name: Cache dependencies
         id: cache-deps
@@ -61,7 +67,7 @@ jobs:
             p4api
             openssl
             zlib
-            ~/.conan
+            ~/.conan2
           key: deps-${{ runner.os }}-${{ env.P4_RELEASE }}-${{ env.P4API_ZIP }}-${{ hashFiles('conanfile.py') }}
 
       - name: Download P4 C++ API
@@ -81,23 +87,17 @@ jobs:
         shell: pwsh
         run: '"P4API_PATH=$(Resolve-Path p4api)" | Out-File -FilePath $env:GITHUB_ENV -Append'
 
-      # Build the profile explicitly rather than with `--detect`: on the runner,
-      # `--detect` finds MinGW/gcc and writes a `compiler.libcxx` that is invalid
-      # once we switch compiler to Visual Studio. Starting from an empty profile
-      # avoids that contamination.
-      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+      # Conan 2 auto-detects msvc + runtime=dynamic on the runner. We pin
+      # compiler.version=194 (VS2022) because center2 publishes a prebuilt OpenSSL
+      # for that config -- so OpenSSL is DOWNLOADED, never built from source (which
+      # would need perl/nasm). OpenSSL is C and ABI-stable across MSVC versions, so
+      # a 194-built OpenSSL links fine even if the bridge is compiled by another
+      # MSVC. The deploy_flat deployer writes the flat openssl/ + zlib/ layout.
+      - name: Conan install (prebuilt OpenSSL + zlib, matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
-          conan profile new default --force
-          conan profile update settings.os=Windows default
-          conan profile update settings.os_build=Windows default
-          conan profile update settings.arch=x86_64 default
-          conan profile update settings.arch_build=x86_64 default
-          conan profile update settings.compiler="Visual Studio" default
-          conan profile update settings.compiler.version=16 default
-          conan profile update settings.compiler.runtime=MD default
-          conan profile update settings.build_type=Release default
-          conan install . --build=missing
+          conan profile detect --force
+          conan install . -s compiler.version=194 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
       - name: Format check (advisory)
         continue-on-error: true
@@ -131,8 +131,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       P4_PLATFORM: bin.linux26x86_64
-      P4API_TGZ: p4api-glibc2.3-openssl1.1.1.tgz
-      # OPENSSL_VERSION: "1.1.1w"   # uncomment only to override the SDK-detected version
+      P4API_TGZ: p4api-glibc2.12-openssl3.tgz
+      # OpenSSL auto-detected from the SDK and resolved from Conan 2's center2.
+      # Uncomment to override if that exact patch is ever missing from the remote:
+      # OPENSSL_VERSION: "3.0.16"
     steps:
       - uses: actions/checkout@v4
 
@@ -147,8 +149,8 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Conan 1.x
-        run: pip install "conan<2"
+      - name: Install Conan 2
+        run: pip install "conan>=2"
 
       - name: Cache dependencies
         id: cache-deps
@@ -158,7 +160,7 @@ jobs:
             p4api
             openssl
             zlib
-            ~/.conan
+            ~/.conan2
           key: deps-${{ runner.os }}-${{ env.P4_RELEASE }}-${{ env.P4API_TGZ }}-${{ hashFiles('conanfile.py') }}
 
       - name: Download P4 C++ API
@@ -176,12 +178,16 @@ jobs:
       - name: Expose SDK path
         run: echo "P4API_PATH=$(pwd)/p4api" >> "$GITHUB_ENV"
 
-      - name: Conan install (OpenSSL + zlib, version matched to the SDK)
+      # Conan 2 auto-detects gcc + libstdc++11. We pin compiler.version=13 because
+      # center2 publishes a prebuilt OpenSSL for that config -- so OpenSSL is
+      # DOWNLOADED, never built from source (no perl/nasm). OpenSSL is C and
+      # ABI-stable across gcc versions, so a gcc-13 build links fine regardless of
+      # the bridge's gcc. The deploy_flat deployer writes the flat layout.
+      - name: Conan install (prebuilt OpenSSL + zlib, matched to the SDK)
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: |
-          conan profile new default --detect
-          conan profile update settings.compiler.libcxx=libstdc++11 default
-          conan install . --build=missing
+          conan profile detect --force
+          conan install . -s compiler.version=13 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
       - name: Format check (advisory)
         continue-on-error: true

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 /// Default vendored SDK directory, used when `P4API_PATH` is not set.
 /// CI (and anyone upgrading) overrides this via the env var so the release is
 /// pinned in exactly one place instead of being hardcoded across the sources.
-const DEFAULT_P4API: &str = "p4api-2021.1.2179737-vs2017_static";
+const DEFAULT_P4API: &str = "p4api-2025.2.2907753-vs2022_static";
 
 fn main() {
     // The C++ sources include the crate's headers as "p4/..." (e.g.
@@ -73,6 +73,9 @@ fn main() {
         };
         println!("cargo:rustc-link-lib={ssl_lib}");
         println!("cargo:rustc-link-lib={crypto_lib}");
+        // OpenSSL 3 is built with zlib support, so libcrypto references zlib
+        // (deflate/inflate/...). Conan's zlib package is `zlib.lib` on Windows.
+        println!("cargo:rustc-link-lib=zlib");
 
         println!("cargo:rustc-link-lib=crypt32");
         println!("cargo:rustc-link-lib=Gdi32");
