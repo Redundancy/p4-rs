@@ -1,6 +1,18 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
+
+/// Deserialize a field that is optional-by-absence: when the key is present its
+/// value is a plain string (wrap in Some); when absent, `#[serde(default)]`
+/// supplies None. Needed because MapDeserializer's string values don't support
+/// serde's native Option handling (a present value fails with
+/// "invalid type: string, expected option").
+fn optional_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(d).map(Some)
+}
 
 pub struct Options {
     short: bool,
@@ -70,7 +82,7 @@ pub struct Info {
 
     #[serde(rename = "clientName")]
     pub client_name: String,
-    #[serde(rename = "clientRoot")]
+    #[serde(rename = "clientRoot", default, deserialize_with = "optional_string")]
     pub client_root: Option<String>,
     #[serde(rename = "clientCwd")]
     pub current_dir: PathBuf,
@@ -86,7 +98,11 @@ pub struct Info {
     #[serde(rename = "serverUptime")]
     pub server_uptime: String,
 
-    #[serde(rename = "serverLicense")]
+    #[serde(
+        rename = "serverLicense",
+        default,
+        deserialize_with = "optional_string"
+    )]
     pub server_license: Option<String>,
 
     #[serde(rename = "userName")]
@@ -112,6 +128,7 @@ mod tests {
             ("serverDate", "2026/07/18 12:00:00 +0000 UTC"),
             ("serverVersion", "P4D/NTX64/2025.2/2907753 (2026/03/10)"),
             ("serverUptime", "00:00:03"),
+            ("serverLicense", "none"),
             ("userName", "alice"),
         ]
         .into_iter()
@@ -124,9 +141,12 @@ mod tests {
         .expect("deserialize tagged info record");
         assert_eq!(info.user_name, "alice");
         assert_eq!(info.server_address, "localhost:1666");
-        // Optional fields absent from the record deserialize as None.
+        // Optional field absent from the record deserializes as None...
         assert!(info.client_root.is_none());
-        assert!(info.server_license.is_none());
+        // ...and present as a plain string becomes Some (a live server reports
+        // serverLicense: "none" when unlicensed -- this used to fail with
+        // "invalid type: string, expected option").
+        assert_eq!(info.server_license.as_deref(), Some("none"));
     }
 
     #[test]

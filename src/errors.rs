@@ -148,8 +148,9 @@ mod tests {
         // Same packing as ErrorOf() in the p4 SDK's error.h:
         // (sev<<28)|(arg<<24)|(gen<<16)|(sub<<10)|cod
         // Field widths: sev 4, arg 4, gen 8, sub 6, cod 10 bits.
-        let (sev, arg, gen, sub, cod) = (3, 1, 38, 12, 500);
-        let id = (sev << 28) | (arg << 24) | (gen << 16) | (sub << 10) | cod;
+        // (`gen` is a reserved keyword in edition 2024, hence `generic`.)
+        let (sev, arg, generic, sub, cod) = (3, 1, 38, 12, 500);
+        let id = (sev << 28) | (arg << 24) | (generic << 16) | (sub << 10) | cod;
 
         let e = expand_error_id(ffi::ErrID {
             id,
@@ -157,7 +158,7 @@ mod tests {
         });
         assert_eq!(e.severity, sev);
         assert_eq!(e.arg_count, arg);
-        assert_eq!(e.generic, gen);
+        assert_eq!(e.generic, generic);
         assert_eq!(e.subsystem, Subsystem::FtpServer); // 12
         assert_eq!(e.sub_code, cod);
         // unique_code is the low 16 bits (subsystem + subcode), matching the

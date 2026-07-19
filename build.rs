@@ -164,10 +164,10 @@ fn detect_sdk_openssl(p4api_dir: &Path) -> Option<String> {
     let mut from = 0;
     while let Some(rel) = data[from..].iter().position(|&b| b == needle[0]) {
         let start = from + rel;
-        if data[start..].starts_with(needle) {
-            if let Some(v) = parse_openssl_version(&data[start + needle.len()..]) {
-                return Some(v);
-            }
+        if data[start..].starts_with(needle)
+            && let Some(v) = parse_openssl_version(&data[start + needle.len()..])
+        {
+            return Some(v);
         }
         from = start + 1;
     }
