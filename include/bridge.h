@@ -38,6 +38,8 @@ public:
 
     void set_program(rust::Str program);
     void set_port(rust::Str port);
+    void set_user(rust::Str user);
+    void set_client(rust::Str client);
     void set_argv(rust::Vec<rust::String> args);
 
     std::unique_ptr<P4Error> finalizer();

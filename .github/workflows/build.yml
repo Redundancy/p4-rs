@@ -14,9 +14,6 @@ name: build
 # -- browse https://filehost.perforce.com/perforce/ to confirm. If center2 lacks the
 # exact OpenSSL version the SDK reports, set OPENSSL_VERSION (per job) to the nearest
 # one in the same series to override the detection.
-#
-# fmt/clippy run as advisory (continue-on-error) so they surface issues without
-# failing the build; flip them to blocking once the tree is clean.
 
 on:
   push:
@@ -112,13 +109,11 @@ jobs:
           conan profile detect --force
           conan install . -s compiler.version=194 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
-      - name: Format check (advisory)
-        continue-on-error: true
+      - name: Format check
         run: cargo fmt --all --check
 
-      - name: Clippy (advisory)
-        continue-on-error: true
-        run: cargo clippy --all-targets
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Build
         run: cargo build --release
@@ -216,13 +211,11 @@ jobs:
           conan profile detect --force
           conan install . -s compiler.version=13 --deployer=deploy_flat --deployer-folder=. --output-folder=conan-build --build=missing
 
-      - name: Format check (advisory)
-        continue-on-error: true
+      - name: Format check
         run: cargo fmt --all --check
 
-      - name: Clippy (advisory)
-        continue-on-error: true
-        run: cargo clippy --all-targets
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Build
         run: cargo build --release

@@ -42,6 +42,16 @@ void P4ClientApi::set_port(rust::Str port) {
     this->api.SetPort(p.c_str());
 }
 
+void P4ClientApi::set_user(rust::Str user) {
+    std::string u(user);
+    this->api.SetUser(u.c_str());
+}
+
+void P4ClientApi::set_client(rust::Str client) {
+    std::string c(client);
+    this->api.SetClient(c.c_str());
+}
+
 std::unique_ptr<P4Error> P4ClientApi::finalizer() {
     auto e = std::make_unique<P4Error>();
     this->api.Final(&e->error);

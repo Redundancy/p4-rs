@@ -62,7 +62,10 @@ impl TestServer {
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        panic!("p4d did not start listening on {} within timeout", self.port);
+        panic!(
+            "p4d did not start listening on {} within timeout",
+            self.port
+        );
     }
 
     fn connect(&self) -> client::Client {
@@ -122,7 +125,10 @@ fn info_roundtrip() {
         .expect("typed info against a live p4d");
 
     assert!(!r.user_name.is_empty(), "user name should be populated");
-    assert!(!r.server_version.is_empty(), "server version should be populated");
+    assert!(
+        !r.server_version.is_empty(),
+        "server version should be populated"
+    );
 }
 
 #[test]

@@ -57,11 +57,13 @@ fn main() {
         // from the OpenSSL version the SDK was built against (the same banner
         // conanfile.py uses to pin the package) so the two can't drift.
         let (ssl_lib, crypto_lib) = match detect_sdk_openssl(&p4api_dir) {
-            Some(v) if v.starts_with("1.0.") => ("ssleay32", "libeay32"),
-            Some(v) => {
-                println!("cargo:warning=p4-rs: SDK links OpenSSL {v}; using libssl/libcrypto");
-                ("libssl", "libcrypto")
+            Some(v) if v.starts_with("1.0.") => {
+                println!(
+                    "cargo:warning=p4-rs: SDK links legacy OpenSSL {v}; using ssleay32/libeay32"
+                );
+                ("ssleay32", "libeay32")
             }
+            Some(_) => ("libssl", "libcrypto"),
             None => {
                 println!(
                     "cargo:warning=p4-rs: could not read the OpenSSL version from {}; \
@@ -100,6 +102,11 @@ fn main() {
         // ideally alongside a move to OpenSSL 1.1.1/3.x) and then delete `Msvcrt`.
         println!("cargo:rustc-link-lib=oldnames");
         println!("cargo:rustc-link-lib=Msvcrt");
+
+        // ConanCenter's prebuilt Release OpenSSL references an ossl_static.pdb
+        // that isn't shipped in the package, producing a wall of harmless
+        // LNK4099 "PDB not found" warnings. Silence just that warning.
+        println!("cargo:rustc-link-arg=/ignore:4099");
     } else if target_os == "linux" {
         // On Linux the archive is libp4api.a, so the lib name is `p4api`
         // (rustc prepends `lib`).

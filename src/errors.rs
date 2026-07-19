@@ -1,16 +1,15 @@
+use miette::Diagnostic;
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::{Debug, Display, Formatter};
-use miette::Diagnostic;
 use thiserror::Error;
-
 
 #[derive(Error, Diagnostic, Debug)]
 #[diagnostic(help("try doing this instead"))]
 pub enum Error {
     #[error("Oops it blew up")]
     RawError(#[from] P4InternalError),
-    
+
     #[error("Oops it blew up")]
     SerializationError(serde::de::value::Error, HashMap<String, String>),
 }
@@ -35,7 +34,6 @@ pub enum Severity {
     Fatal,  // system broken -- nothing can continue
 }
 
-
 #[derive(Debug)]
 pub struct ErrorID {
     pub sub_code: i32,
@@ -52,7 +50,7 @@ impl Error {}
 fn expand_error_id(e: ffi::ErrID) -> ErrorID {
     let code = e.id;
     ErrorID {
-        sub_code: (code >> 0) & 0x3ff,
+        sub_code: code & 0x3ff,
         subsystem: Subsystem::try_from(code >> 10 & 0x3f).expect("invalid subsystem"),
         generic: (code >> 16) & 0xff,
         arg_count: (code >> 24) & 0x0f,
@@ -73,7 +71,7 @@ impl Debug for P4InternalError {
                 "P4 Failed... of {:?} errors",
                 errors
                     .drain(..)
-                    .map(|e| expand_error_id(e))
+                    .map(expand_error_id)
                     .collect::<Vec<ErrorID>>()
             )),
             4 => f.write_fmt(format_args!("P4 Fatal Error... of {count} errors")),
@@ -187,8 +185,7 @@ pub mod ffi {
         fmt: String,
     }
 
-    extern "Rust" {
-    }
+    extern "Rust" {}
 
     unsafe extern "C++" {
         // One or more headers with the matching C++ declarations. Our code
@@ -196,13 +193,12 @@ pub mod ffi {
         // assertions to ensure our picture of the FFI boundary is accurate.
         include!("p4/include/bridge.h");
 
-
         pub type P4Error;
         fn is_error(self: &P4Error) -> bool;
         fn severity(self: &P4Error) -> i32;
         fn errors(self: &P4Error) -> Vec<ErrID>;
         fn get(self: Pin<&mut P4Error>, s: &str) -> String;
-        
+
         fn placeholder_error() -> UniquePtr<P4Error>;
     }
 }

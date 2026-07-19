@@ -1,24 +1,27 @@
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
-use serde::{Serialize, Deserialize};
-
 
 pub struct Options {
     short: bool,
 }
 
+impl Default for Options {
+    fn default() -> Self {
+        Options::new()
+    }
+}
+
 impl Options {
     pub fn new() -> Options {
-        Options {
-            short: false,
-        }
+        Options { short: false }
     }
 
     pub fn shortened(mut self) -> Self {
         self.short = true;
         self
     }
-    
+
     pub fn get_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         if self.short {
@@ -115,9 +118,10 @@ mod tests {
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-        let info =
-            Info::deserialize(MapDeserializer::<_, serde::de::value::Error>::new(m.into_iter()))
-                .expect("deserialize tagged info record");
+        let info = Info::deserialize(MapDeserializer::<_, serde::de::value::Error>::new(
+            m.into_iter(),
+        ))
+        .expect("deserialize tagged info record");
         assert_eq!(info.user_name, "alice");
         assert_eq!(info.server_address, "localhost:1666");
         // Optional fields absent from the record deserialize as None.
@@ -128,6 +132,9 @@ mod tests {
     #[test]
     fn shortened_option_maps_to_dash_s() {
         assert_eq!(Options::new().get_args(), Vec::<String>::new());
-        assert_eq!(Options::new().shortened().get_args(), vec!["-s".to_string()]);
+        assert_eq!(
+            Options::new().shortened().get_args(),
+            vec!["-s".to_string()]
+        );
     }
 }
