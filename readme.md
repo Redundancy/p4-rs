@@ -1,6 +1,7 @@
 # P4-RS
-This is a **personal project** in building a Rust wrapper for the Perforce C++ API - as such it should not be expected to get
-a whole load of effort in any sustained way and may never be "usable" in a production sense.
+This is a **personal project** in building a Rust wrapper for the Perforce C++ API - it's built in bursts rather than
+sustained effort, and while it may never be "usable" in a production sense, it's come a good deal further than that caveat
+once implied (see [Reasonableness of a usable implementation](#reasonableness-of-a-usable-implementation)).
 
 My desire would be to see something that can be easily used in a few ways:
 1) As a typesafe layer enabling a very clean rust-native implementation
@@ -13,12 +14,20 @@ response. This frequently forces users to build a wrapper around those libraries
 The Perforce implementation of JSON output for the current CLI doesn't actually simplify parsing / ingesting this.
 
 ## Reasonableness of a usable implementation
-It's going to be a lot to do to get this code to the point where it's a production ready and fully featured implementation.
-It's not my day job, it's just something that I've wanted to see for a while, and I figure that demonstrating the idea 
-might inspire others. I don't even have the free time to make significant progress at any speed on it if I wanted to.
-Getting as far as I have has been a significant amount of learning, which is what I was looking for in a personal project.
+When I started, the honest expectation was that a broad, fully-featured surface was more than a
+personal project could sustain — it's not my day job, and hand-writing a typed wrapper for command
+after command is slow going.
 
-As an individual, there's no reasonable way that I can see and test every possible setup and potential error.
+AI-assisted development has changed that calculus. It's quite reasonable now to stand up a large
+command surface in a weekend — the breadth you see here — without deep, line-by-line review of
+every path, and I think that's a fine place for this project to sit. Each command is still shaped
+*capture-first* against a real server and covered by integration tests that spin up an actual
+`p4d`, so the common paths are genuinely exercised; what hasn't happened is the hardening of the
+long tail of setups and errors that only real usage surfaces.
+
+As an individual, there's still no reasonable way I can see and test every possible setup and
+potential error — but that's now a "review and harden as it gets used" note rather than a reason
+the project stalls. If anyone actually leans on this, the gaps can be closed over time.
 
 # Current State
 
