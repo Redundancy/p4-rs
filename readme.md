@@ -39,6 +39,7 @@ Implemented so far:
   `groups` / `group`, `labels` / `label`, `branches` / `branch`, `counters`
 - **Changelists:** `changes`, `change`, `describe`, `submit`
 - **Files:** `add`, `edit`, `delete`, `revert`, `sync`, `opened`, `fstat`, `where`, `have`
+- **Auth:** `login` / `login -s` / `logout` (typed ticket + expiry)
 
 The typed edit workflow, for example:
 
@@ -152,7 +153,9 @@ gains an `output_stat` for these, and a `RecordsCollector` turns them into the
 `Vec<HashMap<String, String>>` that `run_records` returns (and that serde then deserializes into
 typed structs). And `ClientUser::InputData` is wired up so a spec form can be fed to `-i`
 commands via `UserInterface::set_input` — that's how the `save_*` half of every spec round-trip
-works.
+works. A later sibling, `ClientUser::Prompt`, answers the server's password prompt from
+`UserInterface::set_password` — that's what makes typed `login` possible: the secret goes *in*
+much as spec text does, and the issued ticket comes back as an ordinary tagged record.
 
 # Building
 

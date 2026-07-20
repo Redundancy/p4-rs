@@ -114,6 +114,27 @@ impl TestServer {
             .expect("connect to local p4d")
     }
 
+    /// The tickets file scoped to this server's root -- keeps `login` off the
+    /// developer's shared tickets file and lets a test observe login/logout by
+    /// reading it directly.
+    pub fn ticket_file(&self) -> PathBuf {
+        self.root.join("p4tickets.txt")
+    }
+
+    /// Connect as a specific P4USER, with a tickets file scoped to this
+    /// server's root -- so `login` never touches the developer's shared
+    /// tickets file and parallel servers can't cross-authenticate. The
+    /// first user to reach a fresh server has implicit super access.
+    pub fn connect_as(&self, user: &str) -> Client {
+        Options::new()
+            .set_program("p4-rs-integration-test")
+            .set_port(&self.port)
+            .set_user(user)
+            .set_ticket_file(&self.ticket_file().to_string_lossy())
+            .connect()
+            .expect("connect to local p4d")
+    }
+
     /// Connect with P4CLIENT set -- required by commands that operate in a
     /// workspace context (e.g. `change -o`).
     pub fn connect_with_client(&self, client_name: &str) -> Client {
@@ -172,6 +193,20 @@ pub fn dump_records(label: &str, r: &Result<Vec<HashMap<String, String>>, Error>
         }
         Err(e) => eprintln!("=== {label}: ERROR {e:?} ==="),
     }
+}
+
+/// Set `user`'s password (`p4 passwd -P <pw> <user>`), which supplies the new
+/// password on the command line so no prompt is involved. Run as a super user
+/// (the first connection to a fresh server qualifies); after this, `login`
+/// requires that password.
+pub fn set_password(c: &mut Client, user: &str, password: &str) {
+    let mut ui = UserInterface::new();
+    c.run_records(
+        &mut ui,
+        "passwd",
+        vec!["-P".to_string(), password.to_string(), user.to_string()],
+    )
+    .expect("passwd -P");
 }
 
 /// Create (or update) a minimal client spec named `name` rooted at `root`, so

@@ -52,6 +52,11 @@ void P4ClientApi::set_client(rust::Str client) {
     this->api.SetClient(c.c_str());
 }
 
+void P4ClientApi::set_ticket_file(rust::Str path) {
+    std::string p(path);
+    this->api.SetTicketFile(p.c_str());
+}
+
 std::unique_ptr<P4Error> P4ClientApi::finalizer() {
     auto e = std::make_unique<P4Error>();
     this->api.Final(&e->error);
@@ -171,6 +176,28 @@ void P4ClientUser::HandleError( Error* err ) {
 void P4ClientUser::set_input(rust::Str input) {
     this->input.assign(input.data(), input.size());
     this->has_input = true;
+}
+
+void P4ClientUser::set_prompt_response(rust::Str response) {
+    this->prompt_response.assign(response.data(), response.size());
+    this->has_prompt_response = true;
+}
+
+// Called when the server asks the client a question (`noEcho` set for secret
+// answers like the password `login` requests). We answer with whatever
+// set_prompt_response stored, once; with nothing pending we leave the response
+// empty, which the server reports as a bad-password/authentication error rather
+// than blocking on an interactive read.
+void P4ClientUser::Prompt( const StrPtr& msg, StrBuf& rsp, int noEcho, Error* e ) {
+    (void)msg;
+    (void)noEcho;
+    (void)e;
+    if (!this->has_prompt_response) {
+        rsp.Clear();
+        return;
+    }
+    rsp.Set(this->prompt_response.c_str(), static_cast<int>(this->prompt_response.size()));
+    this->has_prompt_response = false;
 }
 
 // Called by the server when a command reads input (e.g. `client -i` reads the
