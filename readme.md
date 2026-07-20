@@ -81,20 +81,25 @@ across server versions it gets an `Other(String)` fallback so a listing never fa
 unfamiliar value; server-managed fields (Update/Access stamps) are read-only and never sent
 back on save.
 
-# Desired State
+# Design Notes
 ## Error Handling
 
-The two basic error types now exist on `errors::Error`:
+Errors surface on `errors::Error` in three shapes:
 
 * `SerializationError` — the serde-style "I couldn't build the type I expected from the
   response I got". It carries the raw record map alongside the serde error, so when a struct
   fails to deserialize you can see exactly what the server actually sent.
-* `RawError` — a `P4InternalError` wrapping an uncategorised error straight from P4 (severity,
-  subsystem, and the individual error ids are decoded).
+* `RawError` — a `P4InternalError` wrapping an error straight from P4, with its severity,
+  subsystem, and individual error ids decoded.
+* `SpecError` — spec text that couldn't be parsed or built.
 
-There's also `SpecError` for spec text that can't be parsed or built. Still aspirational: pulling
-specific P4 errors out of the raw bucket into their own enumeration values, so callers can
-`match` on "file already open", "needs resolve", etc. rather than inspecting the raw ids.
+What's *not* here is a typed vocabulary of specific P4 conditions — "file already open", "needs
+resolve", and the like — that callers could `match` on instead of inspecting raw ids. That's less
+a planned feature than an open-ended one: P4 doesn't hand you a catalogue of the errors a command
+can raise, so they only become visible as you actually hit them. The natural way to build it is
+opportunistically — promote a raw error into its own variant the first time real usage runs into
+it — which is exactly the kind of long-tail hardening that
+[accretes with use](#reasonableness-of-a-usable-implementation).
 
 ## Adding Commands
 Once the basics of the handling and parsing are done for the various ways that the P4 Server responds to the client, I expect it to be easy to add new commands and update the types/contents/expected responses of existing ones.
